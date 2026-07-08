@@ -23,6 +23,45 @@ const log = (taskId, actorId, action, from, to) =>
 const notify = (familyId,type,title,content,refType,refId,toRole) =>
   db.prepare(`INSERT INTO Notification (family_id,type,title,content,ref_type,ref_id,to_role) VALUES (?,?,?,?,?,?,?)`).run(familyId,type,title,content,refType,refId,toRole);
 
+// 前端可读的运行时配置（是否启用 Google 登录）
+api.get('/config', (req, res) => res.json({ google_client_id: process.env.GOOGLE_CLIENT_ID || null }));
+
+// Google（Gmail）登录：验证 ID Token → 以雇主身份登录到现有家庭
+api.post('/auth/google', async (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) return res.status(503).json({ error: 'google_not_configured' });
+  const credential = req.body.credential;
+  if (!credential) return res.status(400).json({ error: 'credential_required' });
+  // 用 Google tokeninfo 端点验证 ID Token（自托管低频场景足够）
+  let info;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
+    if (!r.ok) return res.status(401).json({ error: 'invalid_token' });
+    info = await r.json();
+  } catch (e) { return res.status(502).json({ error: 'verify_failed' }); }
+  if (info.aud !== clientId) return res.status(401).json({ error: 'aud_mismatch' });
+  if (String(info.email_verified) !== 'true') return res.status(401).json({ error: 'email_unverified' });
+  const email = normEmail(info.email);
+  const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
+  if (!family) return res.status(500).json({ error: 'no_family' });
+  // 查找/创建该 Google 雇主用户，加入现有家庭
+  let u = db.prepare("SELECT * FROM User WHERE email=? AND role='employer'").get(email);
+  if (!u) {
+    const uid = db.prepare(`INSERT INTO User (name, avatar, email, role, login_method, preferred_language, account_status, registration_status, updated_at, last_login_at)
+      VALUES (?,?,?, 'employer', 'google', 'zh', 'active', 'COMPLETED', datetime('now'), datetime('now'))`)
+      .run(info.name || email.split('@')[0], '👤', email).lastInsertRowid;
+    db.prepare("INSERT INTO FamilyMember (family_id, user_id, role, permissions, status) VALUES (?,?,?,?,?)")
+      .run(family.family_id, uid, 'employer', 'owner', 'active');
+    u = db.prepare('SELECT * FROM User WHERE user_id=?').get(uid);
+  } else {
+    db.prepare("UPDATE User SET name=COALESCE(NULLIF(name,''), ?), login_method='google', last_login_at=datetime('now') WHERE user_id=?")
+      .run(info.name || null, u.user_id);
+    u = db.prepare('SELECT * FROM User WHERE user_id=?').get(u.user_id);
+  }
+  res.json({ ok: true, is_new: !req.body._existing, user: { user_id: u.user_id, name: u.name, avatar: u.avatar, email },
+    family: { family_id: family.family_id, family_name: family.family_name } });
+});
+
 // ---- 引导/家庭/用户 ----
 api.get('/bootstrap', (req, res) => {
   const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
