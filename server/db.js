@@ -383,6 +383,7 @@ const addCol = (table, col, def) => {
   try { db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch { /* 已存在 */ }
 };
 // User → 对应 PRD EmployerUser
+addCol('User', 'username', 'TEXT');                        // 雇主用户名登录（唯一）
 addCol('User', 'phone_country_code', 'TEXT');
 addCol('User', 'password_hash', 'TEXT');
 addCol('User', 'login_method', "TEXT DEFAULT 'phone'");   // phone|email|apple|google

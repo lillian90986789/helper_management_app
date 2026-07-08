@@ -54,6 +54,9 @@ export const api = {
   saveDraft: (body) => req('/auth/draft', { method: 'POST', body }),
   getDraft: (contact) => req('/auth/draft?contact=' + encodeURIComponent(contact)),
   register: (body) => req('/auth/register', { method: 'POST', body }),
+  // 雇主用户名密码 注册 / 登录
+  employerRegister: (body) => req('/auth/employer/register', { method: 'POST', body }),
+  employerLogin: (body) => req('/auth/employer/login', { method: 'POST', body }),
   recommendedTemplates: () => req('/auth/recommended-templates'),
   recipes: (type = 'all') => req('/recipes?type=' + type),
   recipe: (id) => req('/recipes/' + id),

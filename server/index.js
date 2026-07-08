@@ -303,6 +303,49 @@ api.post('/auth/register', (req, res) => {
 // 推荐任务模板清单（供注册新手初始化页展示）
 api.get('/auth/recommended-templates', (req, res) => res.json(RECOMMENDED_TEMPLATES));
 
+// ===== 雇主：用户名 + 密码 注册 / 登录（凭据存 SQLite User 表）=====
+api.post('/auth/employer/register', (req, res) => {
+  const b = req.body;
+  const username = String(b.username || '').trim();
+  const password = String(b.password || '');
+  const fullName = (b.full_name || '').trim() || username;
+  if (!username || username.length < 3) return res.status(400).json({ error: 'username_required' });   // 用户名至少 3 位
+  if (password.length < 6) return res.status(400).json({ error: 'weak_password' });                     // 密码至少 6 位
+  if (db.prepare('SELECT 1 FROM User WHERE username=?').get(username)) return res.status(409).json({ error: 'username_taken' });
+  const tx = db.transaction(() => {
+    // 单家庭演示：无家庭则创建（含默认区域），有则可选改名
+    let family = db.prepare('SELECT * FROM Family LIMIT 1').get();
+    if (!family) {
+      const code = 'HOME-' + Math.floor(1000 + Math.random() * 9000);
+      const fid = db.prepare("INSERT INTO Family (family_name, invite_code, default_language, status) VALUES (?,?, 'zh', 'active')")
+        .run((b.family_name || '').trim() || (fullName + '家'), code).lastInsertRowid;
+      DEFAULT_AREAS.slice(0, 6).forEach(([n, en, ic], i) => db.prepare("INSERT INTO Area (family_id,name,name_en,icon,sort_order,status) VALUES (?,?,?,?,?, 'active')").run(fid, n, en, ic, i));
+      family = db.prepare('SELECT * FROM Family WHERE family_id=?').get(fid);
+    } else if ((b.family_name || '').trim()) {
+      db.prepare('UPDATE Family SET family_name=? WHERE family_id=?').run(b.family_name.trim(), family.family_id);
+      family = db.prepare('SELECT * FROM Family WHERE family_id=?').get(family.family_id);
+    }
+    const uid = db.prepare(`INSERT INTO User (name, username, password_hash, avatar, role, login_method, preferred_language, account_status, registration_status, updated_at, last_login_at)
+      VALUES (?,?,?, '👨🏻‍💼', 'employer', 'password', 'zh', 'active', 'COMPLETED', datetime('now'), datetime('now'))`)
+      .run(fullName, username, hashPwd(password)).lastInsertRowid;
+    db.prepare("INSERT INTO FamilyMember (family_id,user_id,role,permissions,status) VALUES (?,?,?,?,?)").run(family.family_id, uid, 'employer', 'owner', 'active');
+    return { uid, family };
+  });
+  let r; try { r = tx(); } catch (e) { return res.status(500).json({ error: 'register_failed', detail: String(e.message || e) }); }
+  const user = db.prepare('SELECT user_id,name,avatar,role,username FROM User WHERE user_id=?').get(r.uid);
+  res.json({ ok: true, user, family: { family_id: r.family.family_id, family_name: r.family.family_name } });
+});
+
+api.post('/auth/employer/login', (req, res) => {
+  const username = String(req.body.username || '').trim();
+  const password = String(req.body.password || '');
+  const u = db.prepare("SELECT * FROM User WHERE username=? AND role='employer'").get(username);
+  if (!u || !u.password_hash || u.password_hash !== hashPwd(password)) return res.status(401).json({ error: 'invalid_credentials' });
+  db.prepare("UPDATE User SET last_login_at=datetime('now') WHERE user_id=?").run(u.user_id);
+  const family = db.prepare('SELECT family_id,family_name FROM Family LIMIT 1').get();
+  res.json({ ok: true, user: { user_id: u.user_id, name: u.name, avatar: u.avatar, username }, family });
+});
+
 // ===== 任务清单模块（修改版）：按星期重复 =====
 // ---- 日期工具 ----
 const pad = (n) => String(n).padStart(2, '0');
