@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, currentMaidId } from '../api.js';
 import { useI18n, pick } from '../i18n.jsx';
 import { StatusBadge, PriorityBadge, Empty } from '../ui.jsx';
 
@@ -19,7 +19,8 @@ export default function MaidCalendar() {
   const [day, setDay] = useState(null);                 // 当天任务清单
 
   const todayStr = ymd(now);
-  const load = (y, m) => api.month(y, m).then((d) => {
+  const maidId = currentMaidId();
+  const load = (y, m) => api.month(y, m, maidId).then((d) => {
     setData(d);
     const pickDate = (selected && d.days.some((x) => x.date === selected)) ? selected
       : (d.days.find((x) => x.isToday)?.date || d.days[0].date);
@@ -78,7 +79,7 @@ export default function MaidCalendar() {
             <div className="tiny muted" style={{ marginTop: 4 }}>{t('restDayHint')}</div>
           </div>
         ) : !day ? <Empty text="加载中…" /> : (
-          <DayTasks day={day} nav={nav} t={t} lang={lang} />
+          <DayTasks day={day} nav={nav} t={t} lang={lang} maidId={maidId} />
         )}
       </div>
     </>
@@ -96,9 +97,9 @@ function DayHeader({ d, t, en }) {
   );
 }
 
-// 按区域分组展示当天任务
-function DayTasks({ day, nav, t, lang }) {
-  const tasks = day.tasks.filter((x) => x.status !== 'canceled');
+// 按区域分组展示当天任务（仅当前女佣的任务）
+function DayTasks({ day, nav, t, lang, maidId }) {
+  const tasks = day.tasks.filter((x) => x.status !== 'canceled' && x.assignee_id === maidId);
   if (tasks.length === 0) return <Empty icon="🗓️" text={t('noData')} />;
   const active = tasks.filter((x) => !['done', 'skipped', 'incomplete'].includes(x.status));
   const finished = tasks.filter((x) => ['done', 'skipped', 'incomplete'].includes(x.status));

@@ -12,6 +12,7 @@ import Templates from './pages/Templates.jsx';
 import MaidCalendar from './pages/MaidCalendar.jsx';
 import RestDaySettings from './pages/RestDaySettings.jsx';
 import Register from './pages/Register.jsx';
+import JoinPage from './pages/JoinPage.jsx';
 import RecipeList from './pages/RecipeList.jsx';
 import RecipeDetail from './pages/RecipeDetail.jsx';
 import MealOrder from './pages/MealOrder.jsx';
@@ -116,6 +117,7 @@ export default function App() {
               <Route path="/m/shopping" element={<ShoppingPage role="maid" />} />
               <Route path="/m/me" element={<Me role="maid" />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/join" element={<JoinPage />} />
               <Route path="/task-new" element={<TaskNew />} />
               <Route path="/task-new/:id" element={<TaskNew />} />
               <Route path="/templates" element={<Templates />} />

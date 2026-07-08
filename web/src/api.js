@@ -1,4 +1,8 @@
 const base = '/api';
+// 当前登录女佣 id：加入后存于 localStorage(hf_maid)，演示默认种子女佣 Siti(id 2)
+export const currentMaidId = () => {
+  try { return JSON.parse(localStorage.getItem('hf_maid') || 'null')?.user_id || 2; } catch { return 2; }
+};
 async function req(path, opts) {
   const r = await fetch(base + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -22,7 +26,7 @@ export const api = {
   regenInvite: () => req('/family/invite-code', { method: 'POST' }),
   join: (body) => req('/join', { method: 'POST', body }),
   dashEmployer: () => req('/dashboard/employer'),
-  dashMaid: () => req('/dashboard/maid'),
+  dashMaid: (helperId) => req('/dashboard/maid' + (helperId ? '?helper_id=' + helperId : '')),
   // 任务清单模块（修改版）：每日实例
   daily: (date) => req('/daily' + (date ? '?date=' + date : '')),
   dailyTask: (id) => req('/daily/' + id),

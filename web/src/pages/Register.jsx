@@ -176,7 +176,7 @@ const pwdChecks = (pwd, contact) => ({
 });
 
 // ================= 入口页（PRD 4） =================
-function Entry({ tt, agree, setAgree, hasDraft, resume, startOver, setPhase, showToast }) {
+function Entry({ tt, agree, setAgree, hasDraft, resume, startOver, setPhase, showToast, nav }) {
   const go = () => { if (!agree) return showToast(tt('请先同意《用户协议》和《隐私政策》', 'Please agree to the Terms and Privacy Policy')); setPhase('wizard'); };
   return (
     <>
@@ -210,6 +210,10 @@ function Entry({ tt, agree, setAgree, hasDraft, resume, startOver, setPhase, sho
         </label>
 
         <div className="empty tiny" style={{ paddingTop: 18 }}>{tt('已有账号？', 'Already have an account?')} <a onClick={() => showToast(tt('演示版登录略', 'Login omitted in demo'))} style={{ color: 'var(--teal)' }}>{tt('去登录', 'Log in')}</a></div>
+
+        <div style={{ borderTop: '1px solid var(--line)', margin: '18px 0 0', paddingTop: 16 }}>
+          <button className="btn outline block" onClick={() => nav('/join')}>🧹 {tt('我是女佣，用邀请码加入', "I'm a helper — join with invite code")}</button>
+        </div>
       </div>
     </>
   );

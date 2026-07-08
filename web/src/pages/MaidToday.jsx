@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, currentMaidId } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
 import { StatusBadge, PriorityBadge, fmtTime } from '../ui.jsx';
@@ -9,12 +9,13 @@ export default function MaidToday() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const { showToast } = useApp();
-  const { data, reload } = useAsync(() => api.dashMaid());
+  const { data, reload } = useAsync(() => api.dashMaid(currentMaidId()));
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
   const { tasks, progress, next, meals, shopping, rest } = data;
   const dateStr = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const en = lang === 'en';
+  const maidName = (() => { try { return JSON.parse(localStorage.getItem('hf_maid') || 'null')?.name || 'Siti'; } catch { return 'Siti'; } })();
   const restLabel = (r) => en ? `${enMon(r.rest_date)} · ${r.weekday_name_en}` : `${cnMD(r.rest_date)} ${r.weekday_name}`;
 
   const startNext = async () => {
@@ -30,7 +31,7 @@ export default function MaidToday() {
         <div className="spread">
           <div>
             <div className="small" style={{ opacity: .9 }}>{dateStr}</div>
-            <h1 style={{ fontSize: 22 }}>{lang === 'en' ? 'Hi, Siti 👋' : '早上好，Siti 👋'}</h1>
+            <h1 style={{ fontSize: 22 }}>{(lang === 'en' ? 'Hi, ' : '早上好，') + maidName + ' 👋'}</h1>
           </div>
           <span className="badge" style={{ background: 'rgba(255,255,255,.25)', color: '#fff' }}>● {t('workday')}</span>
         </div>

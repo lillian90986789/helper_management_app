@@ -407,7 +407,8 @@ api.get('/month', (req, res) => {
     const dObj = new Date(year, month - 1, dd);
     const ds = ymd(dObj);
     ensureDailyTasks(ds);
-    const tasks = db.prepare('SELECT status FROM DailyTask WHERE task_date=?').all(ds);
+    // 按当前女佣过滤（女佣日历只看自己的任务；雇主设休息日时看该女佣的任务量）
+    const tasks = db.prepare('SELECT status FROM DailyTask WHERE task_date=? AND assignee_id=?').all(ds, helperId);
     const done = tasks.filter((t) => t.status === 'done').length;
     const incomplete = tasks.filter((t) => t.status === 'incomplete').length;
     const pending_review = tasks.filter((t) => t.status === 'pending_review').length;
@@ -639,7 +640,7 @@ api.get('/dashboard/employer', (req, res) => {
 });
 api.get('/dashboard/maid', (req, res) => {
   const date = todayYmd();
-  const helperId = defaultHelperId();
+  const helperId = req.query.helper_id ? +req.query.helper_id : defaultHelperId();
   const todayRest = !!activeRestDay(date, helperId);
   ensureDailyTasks(date);
   const tasks = db.prepare('SELECT * FROM DailyTask WHERE task_date=? AND assignee_id=? ORDER BY sort_order, daily_task_id').all(date, helperId).map(dailyWith);
