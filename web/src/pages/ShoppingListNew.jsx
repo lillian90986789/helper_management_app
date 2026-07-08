@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n } from '../i18n.jsx';
@@ -9,12 +9,17 @@ export default function ShoppingListNew() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const { showToast } = useApp();
-  const [f, setF] = useState({ title: '', store_name: '', budget: '', due_time: '' });
+  const [f, setF] = useState({ title: '', store_name: '', budget: '', due_time: '', assignee_id: null });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const [maids, setMaids] = useState([]);
+  useEffect(() => { api.bootstrap().then((b) => {
+    const list = (b.users || []).filter((u) => u.role === 'maid');
+    setMaids(list); if (list.length) set('assignee_id', list[0].user_id);
+  }); }, []);
 
   const create = async () => {
     if (!f.title.trim()) return showToast(lang === 'en' ? 'Enter list name' : '请填写清单名称');
-    const list = await api.createList({ ...f, budget: +f.budget || 0, assignee_id: 2 });
+    const list = await api.createList({ ...f, budget: +f.budget || 0, assignee_id: f.assignee_id || 2 });
     showToast(t('newList') + ' ✓');
     // 创建后直接进入"添加商品"，方便雇主连续添加
     nav('/shopping-list/' + list.shopping_list_id + '/add-item', { replace: true });
@@ -36,8 +41,14 @@ export default function ShoppingListNew() {
           <div className="field grow"><label>{t('budget')} (S$)</label><input className="input" type="number" step="1" value={f.budget} onChange={(e) => set('budget', e.target.value)} /></div>
           <div className="field grow"><label>{t('dueTime')}</label><input className="input" type="time" value={f.due_time} onChange={(e) => set('due_time', e.target.value)} /></div>
         </div>
-        <div className="card" style={{ background: 'var(--teal-l)', color: 'var(--teal-d)' }}>
-          <div className="small">👤 {t('assignBuyer')}：Siti（{t('maid')}）</div>
+        <div className="field">
+          <label>{t('assignBuyer')} <span className="req">*</span></label>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {maids.length === 0 ? <span className="tiny muted">{lang === 'en' ? 'No helper yet — invite one first' : '还没有女佣，请先邀请'}</span> :
+              maids.map((u) => (
+                <button key={u.user_id} className={'chip' + (f.assignee_id === u.user_id ? ' on' : '')} onClick={() => set('assignee_id', u.user_id)}>{u.avatar} {u.name}</button>
+              ))}
+          </div>
         </div>
       </div>
       <div className="actionbar">

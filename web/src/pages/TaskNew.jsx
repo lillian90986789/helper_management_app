@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
@@ -49,6 +49,16 @@ export default function TaskNew() {
   };
 
   const areas = boot?.areas || [];
+  // 可指定的执行人：家庭内女佣 + 家庭成员（§4.1）
+  const assignees = (boot?.users || []).filter((u) => ['maid', 'member'].includes(u.role));
+  // 新建任务默认派给第一个女佣（编辑时保留原执行人）
+  useEffect(() => {
+    if (editing || !assignees.length) return;
+    if (!assignees.some((u) => u.user_id === f.assignee_id)) {
+      const firstMaid = assignees.find((u) => u.role === 'maid') || assignees[0];
+      if (firstMaid) set('assignee_id', firstMaid.user_id);
+    }
+  }, [boot]);
 
   return (
     <>
@@ -77,6 +87,19 @@ export default function TaskNew() {
                 {a.icon} {pick(lang, a.name, a.name_en)}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* 执行人：指定女佣或家庭成员（任务清单模块 §4.1） */}
+        <div className="field">
+          <label>{t('assignee')} <span className="req">*</span></label>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {assignees.length === 0 ? <span className="tiny muted">{lang === 'en' ? 'No helper yet — invite one first' : '还没有女佣，请先邀请'}</span> :
+              assignees.map((u) => (
+                <button key={u.user_id} className={'chip' + (f.assignee_id === u.user_id ? ' on' : '')} onClick={() => set('assignee_id', u.user_id)}>
+                  {u.avatar} {u.name}{u.role === 'member' ? '·' + t('member') : ''}
+                </button>
+              ))}
           </div>
         </div>
 
