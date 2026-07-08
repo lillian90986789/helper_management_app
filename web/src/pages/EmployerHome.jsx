@@ -9,7 +9,7 @@ export default function EmployerHome() {
   const nav = useNavigate();
   const { data } = useAsync(() => api.dashEmployer());
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
-  const { summary, meals, shoppingSummary, notifications, activity } = data;
+  const { summary, meals, shoppingSummary, notifications, activity, family } = data;
   const unread = notifications.filter((n) => !n.is_read).length;
 
   return (
@@ -17,7 +17,7 @@ export default function EmployerHome() {
       <div className="topbar teal" style={{ paddingTop: 16, paddingBottom: 16, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
         <div className="spread">
           <div>
-            <div className="small" style={{ opacity: .85 }}>陈先生家 · Chen Family</div>
+            <div className="small" style={{ opacity: .85 }}>{family?.family_name || (lang === 'en' ? 'My Family' : '我的家庭')}</div>
             <h1 style={{ fontSize: 21 }}>{t('todayTasks')}</h1>
           </div>
           <button className="iconbtn" onClick={() => nav('/notifications')}>

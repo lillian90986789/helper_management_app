@@ -46,7 +46,7 @@ export default function Members() {
         {/* 邀请码卡片 */}
         <div className="section-title">🔑 {t('inviteCode')}</div>
         <div className="card" style={{ background: 'linear-gradient(135deg,#16a085,#0e7a64)', color: '#fff' }}>
-          <div className="small" style={{ opacity: .9 }}>{data.members[0]?.name ? '陈先生家 · Chen Family' : ''}</div>
+          <div className="small" style={{ opacity: .9 }}>{data.family_name || ''}</div>
           <div className="spread mt8">
             <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: 2 }}>{data.invite_code}</span>
             <button className="iconbtn" style={{ background: 'rgba(255,255,255,.22)' }} onClick={copy}>📋</button>

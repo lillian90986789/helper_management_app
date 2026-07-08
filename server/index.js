@@ -79,7 +79,7 @@ api.get('/members', (req, res) => {
            u.user_id, u.name, u.avatar, u.phone, u.email, u.preferred_language, u.account_status
     FROM FamilyMember fm JOIN User u ON u.user_id = fm.user_id
     WHERE fm.family_id = ? ORDER BY fm.family_member_id`).all(family.family_id);
-  res.json({ invite_code: family.invite_code, members: rows });
+  res.json({ invite_code: family.invite_code, family_name: family.family_name, members: rows });
 });
 // 雇主直接添加成员/女佣账号
 api.post('/members', (req, res) => {
@@ -685,7 +685,8 @@ api.get('/dashboard/employer', (req, res) => {
   };
   const notifications = db.prepare("SELECT * FROM Notification WHERE to_role IN ('employer') ORDER BY notification_id DESC LIMIT 6").all();
   const activity = db.prepare('SELECT l.*, t.task_name_snapshot task_title, u.name actor_name FROM DailyTaskLog l JOIN DailyTask t ON t.daily_task_id=l.daily_task_id LEFT JOIN User u ON u.user_id=l.actor_id ORDER BY l.log_id DESC LIMIT 6').all();
-  res.json({ summary, meals, shopping, shoppingSummary, notifications, activity });
+  const family = db.prepare('SELECT family_id, family_name FROM Family LIMIT 1').get();
+  res.json({ summary, meals, shopping, shoppingSummary, notifications, activity, family });
 });
 api.get('/dashboard/maid', (req, res) => {
   const date = todayYmd();
@@ -766,7 +767,7 @@ const FOOD_SUBCATEGORIES = [
 ];
 api.get('/categories', (req, res) => res.json({ primary: PRIMARY_CATEGORIES, food_sub: FOOD_SUBCATEGORIES, gst_rate: gstRate() }));
 
-// 家庭设置：更新 GST 税率（家庭级可配置）
+// 家庭设置：更新 GST 税率 / 家庭名称（家庭级可配置）
 api.post('/family/settings', (req, res) => {
   const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
   const b = req.body;
@@ -774,6 +775,10 @@ api.post('/family/settings', (req, res) => {
     let r = +b.gst_rate;
     if (isNaN(r) || r < 0 || r >= 1) return res.status(400).json({ error: 'invalid_gst_rate' }); // 0–1 之间（小数）
     db.prepare('UPDATE Family SET gst_rate=? WHERE family_id=?').run(r, family.family_id);
+  }
+  if (b.family_name !== undefined) {
+    if (!String(b.family_name).trim()) return res.status(400).json({ error: 'family_name_required' });
+    db.prepare("UPDATE Family SET family_name=?, updated_at=datetime('now') WHERE family_id=?").run(String(b.family_name).trim(), family.family_id);
   }
   res.json(db.prepare('SELECT * FROM Family WHERE family_id=?').get(family.family_id));
 });

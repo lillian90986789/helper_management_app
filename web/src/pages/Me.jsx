@@ -14,41 +14,48 @@ export default function Me({ role }) {
 
   // 当前登录用户资料（雇主从后端读，女佣读加入时记住的身份）
   const [profile, setProfile] = useState(null);   // {user_id, name, avatar}
-  const [family, setFamily] = useState(isEmp ? '' : '陈先生家');
+  const [family, setFamily] = useState('');
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [draftAvatar, setDraftAvatar] = useState('');
+  const [draftFamily, setDraftFamily] = useState('');
 
   // 家庭级 GST 税率设置（雇主可配置）
   const [gstPct, setGstPct] = useState(null);
   useEffect(() => {
-    if (isEmp) {
-      api.bootstrap().then((b) => {
+    api.bootstrap().then((b) => {
+      setFamily(b.family?.family_name || (en ? 'My Family' : '我的家庭'));
+      if (isEmp) {
         setGstPct(Math.round((b.family?.gst_rate ?? 0.09) * 100 * 100) / 100);
-        const e = (b.users || []).find((u) => u.role === 'employer') || {};
-        setProfile({ user_id: e.user_id, name: e.display_name || e.name || '陈先生', avatar: e.avatar || '👨🏻‍💼' });
-        setFamily(b.family?.family_name || '我的家庭');
-      });
-    } else {
-      let m = null; try { m = JSON.parse(localStorage.getItem('hf_maid') || 'null'); } catch {}
-      setProfile({ user_id: m?.user_id || 2, name: m?.name || 'Siti', avatar: m?.avatar || '👩🏽‍🦱' });
-      setFamily(m?.family || '陈先生家');
-    }
+        let emp = null; try { emp = JSON.parse(localStorage.getItem('hf_employer') || 'null'); } catch {}
+        const e = emp || (b.users || []).find((u) => u.role === 'employer') || {};
+        setProfile({ user_id: e.user_id, name: e.display_name || e.name || (en ? 'Employer' : '雇主'), avatar: e.avatar || '👨🏻‍💼' });
+      } else {
+        let m = null; try { m = JSON.parse(localStorage.getItem('hf_maid') || 'null'); } catch {}
+        setProfile({ user_id: m?.user_id || 2, name: m?.name || 'Siti', avatar: m?.avatar || '👩🏽‍🦱' });
+      }
+    });
   }, [isEmp]);
 
-  const openEdit = () => { setDraftName(profile?.name || ''); setDraftAvatar(profile?.avatar || AVATARS[0]); setEditing(true); };
+  const openEdit = () => { setDraftName(profile?.name || ''); setDraftAvatar(profile?.avatar || AVATARS[0]); setDraftFamily(family); setEditing(true); };
   const saveProfile = async () => {
     if (!draftName.trim()) return showToast(en ? 'Enter a name' : '请填写姓名');
+    if (isEmp && !draftFamily.trim()) return showToast(en ? 'Enter family name' : '请填写家庭名称');
     try {
       const body = { name: draftName.trim(), avatar: draftAvatar };
       if (isEmp) body.display_name = draftName.trim();
       const r = profile?.user_id ? await api.updateUser(profile.user_id, body) : { ...profile, ...body };
       setProfile({ user_id: r.user_id || profile?.user_id, name: r.display_name || r.name, avatar: r.avatar });
-      if (!isEmp) { try { const m = JSON.parse(localStorage.getItem('hf_maid') || '{}'); localStorage.setItem('hf_maid', JSON.stringify({ ...m, user_id: r.user_id || m.user_id, name: r.name, avatar: r.avatar })); } catch {} }
+      if (isEmp) {
+        try { localStorage.setItem('hf_employer', JSON.stringify({ user_id: r.user_id || profile?.user_id, name: r.display_name || r.name, avatar: r.avatar })); } catch {}
+        if (draftFamily.trim() !== family) { await api.saveFamilySettings({ family_name: draftFamily.trim() }); setFamily(draftFamily.trim()); }
+      } else {
+        try { const m = JSON.parse(localStorage.getItem('hf_maid') || '{}'); localStorage.setItem('hf_maid', JSON.stringify({ ...m, user_id: r.user_id || m.user_id, name: r.name, avatar: r.avatar })); } catch {}
+      }
       setEditing(false); showToast(en ? 'Saved ✓' : '已保存 ✓');
     } catch { showToast(en ? 'Save failed' : '保存失败'); }
   };
-  const user = { name: profile?.name || (isEmp ? '陈先生' : 'Siti'), avatar: profile?.avatar || (isEmp ? '👨🏻‍💼' : '👩🏽‍🦱'), role: t(isEmp ? 'employer' : 'maid') };
+  const user = { name: profile?.name || (isEmp ? (en ? 'Employer' : '雇主') : 'Siti'), avatar: profile?.avatar || (isEmp ? '👨🏻‍💼' : '👩🏽‍🦱'), role: t(isEmp ? 'employer' : 'maid') };
   const saveGst = async (pct) => {
     const p = +pct; if (isNaN(p) || p < 0 || p >= 100) return showToast(lang === 'en' ? 'Enter 0–99' : '请输入 0–99');
     setGstPct(p);
@@ -86,6 +93,12 @@ export default function Me({ role }) {
               <label>{en ? 'Name' : '姓名'} {isEmp && <span className="tiny muted">（{en ? 'shown to helper' : '女佣端可见'}）</span>}</label>
               <input className="input" value={draftName} onChange={(e) => setDraftName(e.target.value)} />
             </div>
+            {isEmp && (
+              <div className="field" style={{ marginBottom: 0, marginTop: 12 }}>
+                <label>{en ? 'Family name' : '家庭名称'} <span className="tiny muted">（{en ? 'shown on home & helper side' : '首页/女佣端显示'}）</span></label>
+                <input className="input" value={draftFamily} onChange={(e) => setDraftFamily(e.target.value)} placeholder={en ? 'e.g. Gao Family' : '例如：高先生家'} />
+              </div>
+            )}
             <div className="field" style={{ marginBottom: 0 }}>
               <label>{en ? 'Avatar' : '头像'}</label>
               <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
@@ -145,7 +158,7 @@ export default function Me({ role }) {
         </div>
 
         {isEmp && <button className="btn outline block mt12" onClick={() => nav('/register')}>➕ {lang === 'en' ? 'Register a new employer account' : '注册新雇主账号'}</button>}
-        <button className="btn danger block mt12" onClick={() => nav(isEmp ? '/register' : '/')}>{t('logout')}</button>
+        <button className="btn danger block mt12" onClick={() => { try { localStorage.removeItem(isEmp ? 'hf_employer' : 'hf_maid'); } catch {} nav(isEmp ? '/register' : '/join'); }}>{t('logout')}</button>
         <div className="empty tiny" style={{ paddingTop: 20 }}>HomeFlow 家务管家 · MVP v1.0</div>
       </div>
     </>
