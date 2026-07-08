@@ -9,7 +9,12 @@ export default function Me({ role }) {
   const nav = useNavigate();
   const { showToast } = useApp();
   const isEmp = role === 'employer';
-  const user = isEmp ? { name: '陈先生', avatar: '👨🏻‍💼', role: t('employer') } : { name: 'Siti', avatar: '👩🏽‍🦱', role: t('maid') };
+  // 女佣信息读取登录时（邀请码加入）记住的身份，未登录则用演示默认 Siti
+  const maid = (() => { try { return JSON.parse(localStorage.getItem('hf_maid') || 'null'); } catch { return null; } })();
+  const family = maid?.family || '陈先生家';
+  const user = isEmp
+    ? { name: '陈先生', avatar: '👨🏻‍💼', role: t('employer') }
+    : { name: maid?.name || 'Siti', avatar: maid?.avatar || '👩🏽‍🦱', role: t('maid') };
 
   // 家庭级 GST 税率设置（雇主可配置）
   const [gstPct, setGstPct] = useState(null);
@@ -38,7 +43,7 @@ export default function Me({ role }) {
         <div className="avatar" style={{ width: 54, height: 54, fontSize: 30, background: 'rgba(255,255,255,.25)' }}>{user.avatar}</div>
         <div className="grow">
           <h1 style={{ fontSize: 20 }}>{user.name}</h1>
-          <div className="sub">{user.role} · 陈先生家</div>
+          <div className="sub">{user.role} · {family}</div>
         </div>
       </div>
       <div className="content">
