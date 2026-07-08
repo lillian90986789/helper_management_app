@@ -1,0 +1,134 @@
+import { createContext, useContext, useState, useCallback } from 'react';
+import { Routes, Route, NavLink, useNavigate, Navigate, useLocation } from 'react-router-dom';
+import { useI18n } from './i18n.jsx';
+import { Toast } from './ui.jsx';
+
+import EmployerHome from './pages/EmployerHome.jsx';
+import MaidToday from './pages/MaidToday.jsx';
+import TaskList from './pages/TaskList.jsx';
+import TaskNew from './pages/TaskNew.jsx';
+import TaskDetail from './pages/TaskDetail.jsx';
+import Templates from './pages/Templates.jsx';
+import MaidCalendar from './pages/MaidCalendar.jsx';
+import RestDaySettings from './pages/RestDaySettings.jsx';
+import Register from './pages/Register.jsx';
+import RecipeList from './pages/RecipeList.jsx';
+import RecipeDetail from './pages/RecipeDetail.jsx';
+import MealOrder from './pages/MealOrder.jsx';
+import ShoppingPage from './pages/ShoppingPage.jsx';
+import ShoppingListNew from './pages/ShoppingListNew.jsx';
+import ShoppingItemNew from './pages/ShoppingItemNew.jsx';
+import ShoppingSettle from './pages/ShoppingSettle.jsx';
+import SubstituteReview from './pages/SubstituteReview.jsx';
+import Notifications from './pages/Notifications.jsx';
+import Members from './pages/Members.jsx';
+import Me from './pages/Me.jsx';
+
+const AppCtx = createContext(null);
+export const useApp = () => useContext(AppCtx);
+
+const EMP_TABS = [
+  { to: '/e/home', key: 'home', ic: '🏠' },
+  { to: '/e/tasks', key: 'tasks', ic: '🧹' },
+  { to: '/e/recipes', key: 'recipes', ic: '🍳' },
+  { to: '/e/shopping', key: 'shopping', ic: '🛒' },
+  { to: '/e/me', key: 'me', ic: '👤' },
+];
+const MAID_TABS = [
+  { to: '/m/today', key: 'today', ic: '☀️' },
+  { to: '/m/tasks', key: 'tasks', ic: '🧹' },
+  { to: '/m/cooking', key: 'cooking', ic: '🍳' },
+  { to: '/m/shopping', key: 'shopping', ic: '🛒' },
+  { to: '/m/me', key: 'me', ic: '👤' },
+];
+
+function TabBar({ role }) {
+  const { t } = useI18n();
+  const tabs = role === 'employer' ? EMP_TABS : MAID_TABS;
+  return (
+    <nav className="tabbar">
+      {tabs.map((tab) => (
+        <NavLink key={tab.to} to={tab.to} className={({ isActive }) => 'tab' + (isActive ? ' on' : '')}>
+          <span className="ic">{tab.ic}</span>
+          <span>{t(tab.key)}</span>
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
+function Clock() {
+  return <>9:41</>;
+}
+
+export default function App() {
+  const { lang, setLang, t } = useI18n();
+  const nav = useNavigate();
+  const loc = useLocation();
+  const [toast, setToast] = useState('');
+  const showToast = useCallback((m) => { setToast(m); setTimeout(() => setToast(''), 1600); }, []);
+
+  // 当前角色由路径前缀决定
+  const role = loc.pathname.startsWith('/m') ? 'maid' : 'employer';
+  const showTabs = /^\/(e|m)\//.test(loc.pathname);
+
+  const switchRole = (r) => nav(r === 'employer' ? '/e/home' : '/m/today');
+
+  return (
+    <AppCtx.Provider value={{ showToast, role }}>
+      <div className="stage">
+        {/* 桌面预览：左侧角色 / 语言切换工具栏（手机端隐藏） */}
+        <div className="role-toolbar desk-only">
+          <div className="ttl">{t('appName')}</div>
+          <div className="ttl" style={{ marginTop: 6 }}>角色 Role</div>
+          <button className={role === 'employer' ? 'on' : ''} onClick={() => switchRole('employer')}>👨🏻‍💼 {t('employer')}</button>
+          <button className={role === 'maid' ? 'on' : ''} onClick={() => switchRole('maid')}>👩🏽‍🦱 {t('maid')}</button>
+          <div className="ttl" style={{ marginTop: 6 }}>语言 Language</div>
+          <button className={lang === 'zh' ? 'on' : ''} onClick={() => setLang('zh')}>🇨🇳 简体中文</button>
+          <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>🇬🇧 English</button>
+          <div className="hint">在手机上访问时为全屏 App，可“添加到主屏幕”作为 PWA 安装。此侧栏仅桌面预览可见，用于切换演示角色。</div>
+        </div>
+
+        <div className="phone">
+          <div className="notch desk-only" />
+          <div className="statusbar desk-only">
+            <Clock />
+            <span>📶 🔋 100%</span>
+          </div>
+          <div className="screen">
+            <Routes>
+              <Route path="/" element={<Navigate to="/e/home" replace />} />
+              <Route path="/e/home" element={<EmployerHome />} />
+              <Route path="/e/tasks" element={<TaskList role="employer" />} />
+              <Route path="/e/recipes" element={<RecipeList />} />
+              <Route path="/e/shopping" element={<ShoppingPage role="employer" />} />
+              <Route path="/e/me" element={<Me role="employer" />} />
+              <Route path="/m/today" element={<MaidToday />} />
+              <Route path="/m/tasks" element={<MaidCalendar />} />
+              <Route path="/m/cooking" element={<RecipeList cooking />} />
+              <Route path="/m/shopping" element={<ShoppingPage role="maid" />} />
+              <Route path="/m/me" element={<Me role="maid" />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/task-new" element={<TaskNew />} />
+              <Route path="/task-new/:id" element={<TaskNew />} />
+              <Route path="/templates" element={<Templates />} />
+              <Route path="/rest-days" element={<RestDaySettings />} />
+              <Route path="/task/:id" element={<TaskDetail />} />
+              <Route path="/recipe/:id" element={<RecipeDetail />} />
+              <Route path="/meal/:id" element={<MealOrder />} />
+              <Route path="/shopping-new" element={<ShoppingListNew />} />
+              <Route path="/shopping-list/:id" element={<ShoppingPage detail />} />
+              <Route path="/shopping-list/:id/add-item" element={<ShoppingItemNew />} />
+              <Route path="/shopping-list/:id/settle" element={<ShoppingSettle />} />
+              <Route path="/substitute/:itemId" element={<SubstituteReview />} />
+              <Route path="/members" element={<Members />} />
+              <Route path="/notifications" element={<Notifications />} />
+            </Routes>
+          </div>
+          {showTabs && <TabBar role={role} />}
+          <Toast msg={toast} />
+        </div>
+      </div>
+    </AppCtx.Provider>
+  );
+}

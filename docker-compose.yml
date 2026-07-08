@@ -1,0 +1,14 @@
+services:
+  homeflow:
+    build: .
+    container_name: homeflow
+    restart: unless-stopped
+    ports:
+      # 左边是 NAS 上对外暴露的端口，可按需修改，例如 "9000:8080"
+      - "8080:8080"
+    volumes:
+      # SQLite 数据库持久化到 NAS 本地目录，容器重建数据不丢
+      - ./data:/app/data
+    environment:
+      - PORT=8080
+      - DATA_DIR=/app/data

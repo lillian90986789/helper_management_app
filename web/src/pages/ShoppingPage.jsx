@@ -1,0 +1,125 @@
+import { useParams, useNavigate } from 'react-router-dom';
+import { api } from '../api.js';
+import { useAsync } from '../hooks.js';
+import { useI18n, pick } from '../i18n.jsx';
+import { TopBar, StatusBadge, fmtTime, Empty } from '../ui.jsx';
+import { useApp } from '../App.jsx';
+
+const GROUPS = ['to_buy', 'bought', 'out_of_stock', 'sub_requested'];
+
+export default function ShoppingPage({ role, detail }) {
+  if (detail) return <ShoppingDetail />;
+  return <ShoppingOverview role={role} />;
+}
+
+function ShoppingOverview({ role }) {
+  const { t } = useI18n();
+  const nav = useNavigate();
+  const { data: lists } = useAsync(() => api.shoppingLists());
+  return (
+    <>
+      <div className="topbar"><h1>{t('shopping')}</h1>{role === 'employer' && <button className="iconbtn" onClick={() => nav('/shopping-new')}>＋</button>}</div>
+      <div className="content">
+        {!lists ? <Empty text="加载中…" /> : lists.map((l) => (
+          <div key={l.shopping_list_id} className="card tap" onClick={() => nav('/shopping-list/' + l.shopping_list_id)}>
+            <div className="spread">
+              <span className="bold">{l.title}</span>
+              <StatusBadge status={l.status} />
+            </div>
+            <div className="small muted mt4">📍 {l.store_name} · {l.assignee?.name} · ⏰ {fmtTime(l.due_time)}</div>
+            <div className="spread mt12">
+              <span className="small muted">{l.items.length} {t('items')}</span>
+              <span className="bold">{t('budget')} S${l.budget} · <span style={{ color: 'var(--teal)' }}>{t('actualTotal')} S${l.actual_total.toFixed(1)}</span></span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ShoppingDetail() {
+  const { id } = useParams();
+  const { t, lang } = useI18n();
+  const nav = useNavigate();
+  const { role, showToast } = useApp();
+  const { data: l, reload } = useAsync(() => api.shopping(id), [id]);
+  if (!l) return <><TopBar title={t('shoppingList')} /><div className="empty">加载中…</div></>;
+
+  const mark = async (item, status) => { await api.patchItem(item.shopping_item_id, { status }); showToast('✓'); reload(); };
+  const del = async (item) => { await api.deleteItem(item.shopping_item_id); showToast(lang === 'en' ? 'Removed' : '已删除'); reload(); };
+
+  const grouped = GROUPS.map((g) => ({ g, items: l.items.filter((i) => i.status === g || (g === 'bought' && i.status === 'sub_approved')) })).filter((x) => x.items.length);
+
+  return (
+    <>
+      <TopBar title={l.title} right={role === 'employer' ? <button className="iconbtn" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/add-item')}>＋</button> : undefined} />
+      <div className="content">
+        <div className="card">
+          <div className="spread"><StatusBadge status={l.status} /><span className="small muted">📍 {l.store_name}</span></div>
+          <div className="stat-grid mt12">
+            <div><div className="muted small">{t('budget')}</div><div className="bold" style={{ fontSize: 18 }}>S${l.budget}</div></div>
+            <div><div className="muted small">{t('estTotal')}</div><div className="bold" style={{ fontSize: 18 }}>S${l.est_total.toFixed(1)}</div></div>
+            <div><div className="muted small">{t('actualTotal')}</div><div className="bold" style={{ fontSize: 18, color: 'var(--teal)' }}>S${l.actual_total.toFixed(1)}</div></div>
+            <div><div className="muted small">{t('items')}</div><div className="bold" style={{ fontSize: 18 }}>{l.items.length}</div></div>
+          </div>
+        </div>
+
+        {grouped.map(({ g, items }) => (
+          <div key={g}>
+            <div className="section-title"><StatusBadge status={g} /></div>
+            <div className="card">
+              {items.map((it) => (
+                <div key={it.shopping_item_id} className="list-item">
+                  <div className="thumb">{it.image_url}</div>
+                  <div className="grow">
+                    <div className="bold">{pick(lang, it.name, it.name_en)} {it.urgency === 'urgent' && <span className="badge red tiny">{t('urgent')}</span>}</div>
+                    <div className="tiny muted">{it.quantity}{it.unit}{it.brand ? ' · ' + it.brand : ''}{it.specification ? ' · ' + it.specification : ''}</div>
+                    {it.actual_total != null && <div className="tiny" style={{ color: 'var(--teal)' }}>{t('actualTotal')} S${it.actual_total.toFixed(2)}</div>}
+                    {it.status === 'sub_requested' && <div className="tiny" style={{ color: 'var(--amber)' }}>→ {it.sub_name} ({it.sub_reason})</div>}
+                  </div>
+                  {/* 行内操作 */}
+                  {role === 'maid' && it.status === 'to_buy' && <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <button className="btn sm primary" onClick={() => mark(it, 'bought')}>{t('markBought')}</button>
+                    <button className="btn sm outline" onClick={() => mark(it, 'out_of_stock')}>{t('markOOS')}</button>
+                  </div>}
+                  {role === 'maid' && it.status === 'out_of_stock' && it.allow_substitute &&
+                    <button className="btn sm amber" onClick={() => nav('/substitute/' + it.shopping_item_id)}>{t('applySub')}</button>}
+                  {role === 'employer' && it.status === 'sub_requested' &&
+                    <button className="btn sm amber" onClick={() => nav('/substitute/' + it.shopping_item_id)}>{t('subReview')}</button>}
+                  {role === 'employer' && it.status === 'to_buy' &&
+                    <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => del(it)}>✕</button>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* 空清单：引导雇主添加商品 */}
+        {l.items.length === 0 && (
+          <Empty icon="🛒" text={role === 'employer' ? t('addFirstItem') : t('noItems')} />
+        )}
+        {role === 'employer' && (
+          <button className="btn outline block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/add-item')}>＋ {t('addItem')}</button>
+        )}
+
+        {/* 小票 */}
+        {l.receipt_image && <>
+          <div className="section-title">🧾 {lang === 'en' ? 'Receipt' : '小票'}</div>
+          <div className="card"><div className="thumb lg">{l.receipt_image}</div>
+            {l.payment_method && <div className="small muted mt8">{l.payment_method}</div>}
+          </div>
+        </>}
+      </div>
+
+      {/* 底部主操作 */}
+      {role === 'maid'
+        ? <div className="actionbar"><button className="btn primary block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/settle')}>💰 {t('enterPrice')} · {t('settle')}</button></div>
+        : <div className="actionbar">
+            {l.status === 'pending_confirm'
+              ? <button className="btn primary block" onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'confirmed' }); showToast(t('confirmAccount') + ' ✓'); reload(); }}>✓ {t('confirmAccount')}</button>
+              : <button className="btn outline block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/settle')}>{t('settle')}</button>}
+          </div>}
+    </>
+  );
+}

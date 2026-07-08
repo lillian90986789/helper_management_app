@@ -1,0 +1,12 @@
+{
+  "name": "HomeFlow 家务管家",
+  "short_name": "HomeFlow",
+  "description": "家庭事务协作 App — 家务 · 做饭 · 采购",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#16a085",
+  "icons": [
+    { "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2316a085'/><text y='.92em' x='14' font-size='72'>🏠</text></svg>", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
