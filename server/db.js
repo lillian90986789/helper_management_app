@@ -395,6 +395,8 @@ addCol('User', 'default_currency', 'TEXT');
 addCol('User', 'registration_status', "TEXT DEFAULT 'COMPLETED'");
 addCol('User', 'updated_at', 'TEXT');
 addCol('User', 'last_login_at', 'TEXT');
+// Family → 采购模块：可配置消费税率 GST（第 8.3 节风格，家庭级设置）
+addCol('Family', 'gst_rate', 'REAL DEFAULT 0.09');
 // Family → 对应 PRD Family
 addCol('Family', 'owner_user_id', 'INTEGER');
 addCol('Family', 'family_avatar_url', 'TEXT');
@@ -409,5 +411,18 @@ addCol('Area', 'status', "TEXT DEFAULT 'active'");
 // DailyTask → 任务清单模块（日历 + 休息日）第 9.2 节新增字段
 addCol('DailyTask', 'weekday', 'INTEGER');               // 1=周一 … 7=周日，便于日历快速展示
 addCol('DailyTask', 'is_rest_day_task', 'INTEGER DEFAULT 0'); // 是否为休息日特别任务
+// ShoppingItem → 采购模块：两级分类（第 3 节）
+addCol('ShoppingItem', 'primary_category', "TEXT DEFAULT '其他'");   // 一级分类
+addCol('ShoppingItem', 'secondary_category', 'TEXT');                // 二级分类（食材必填）
+// ShoppingList → 采购模块：Receipt 金额核对（第 8 节）+ 报销（第 18 节）
+addCol('ShoppingList', 'purchase_date', 'TEXT');                     // 采购日期（YYYY-MM-DD）
+addCol('ShoppingList', 'receipt_total', 'REAL');                     // Receipt 识别/手填总金额
+addCol('ShoppingList', 'helper_entered_total', 'REAL');             // 女佣录入总金额
+addCol('ShoppingList', 'employer_confirmed_total', 'REAL');          // 雇主确认金额
+addCol('ShoppingList', 'amount_match_status', 'TEXT');               // matched|mismatch|unrecognized|manual
+addCol('ShoppingList', 'difference_reason', 'TEXT');                 // 差异原因
+addCol('ShoppingList', 'reimbursement_status', "TEXT DEFAULT 'none'"); // none|to_reimburse|reimbursed|partial|disputed
+addCol('ShoppingList', 'confirmed_at', 'TEXT');
+addCol('ShoppingList', 'submitted_at', 'TEXT');
 
 export default db;

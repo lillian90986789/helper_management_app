@@ -1,25 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n } from '../i18n.jsx';
 import { TopBar } from '../ui.jsx';
 import { useApp } from '../App.jsx';
+import { CategoryPicker } from '../ui.jsx';
 
 const EMOJIS = ['🛒','🍅','🥚','🐟','🍚','🎃','🥬','🍗','🥛','🧴','🍶','🧻','🍎','🥦','🧀','🍞'];
-const CATS = [['食材', 'Food'], ['宝宝用品', 'Baby'], ['清洁用品', 'Cleaning'], ['日用品', 'Daily']];
 
 export default function ShoppingItemNew() {
   const { id } = useParams();
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const { showToast } = useApp();
-  const empty = { name: '', category: '食材', image_url: '🛒', quantity: 1, unit: lang === 'en' ? 'pc' : '件',
+  const [cats, setCats] = useState(null);
+  useEffect(() => { api.categories().then(setCats); }, []);
+  const empty = { name: '', primary_category: '食材', secondary_category: '肉类', image_url: '🛒', quantity: 1, unit: lang === 'en' ? 'pc' : '件',
     brand: '', specification: '', estimated_price: '', budget_limit: '', allow_substitute: true, urgency: 'normal', notes: '' };
   const [f, setF] = useState(empty);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
   const save = async (again) => {
     if (!f.name.trim()) return showToast(lang === 'en' ? 'Enter item name' : '请填写商品名称');
+    if (f.primary_category === '食材' && !f.secondary_category) return showToast(t('foodSubRequired'));
     await api.addItem(id, {
       ...f, estimated_price: +f.estimated_price || 0, budget_limit: +f.budget_limit || 0,
       quantity: +f.quantity || 1, allow_substitute: f.allow_substitute ? 1 : 0,
@@ -47,14 +50,8 @@ export default function ShoppingItemNew() {
           <label>{t('itemName')} <span className="req">*</span></label>
           <input className="input" value={f.name} placeholder={lang === 'en' ? 'e.g. Tomato' : '例如：番茄'} onChange={(e) => set('name', e.target.value)} />
         </div>
-        <div className="field">
-          <label>{t('itemCategory')}</label>
-          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
-            {CATS.map(([zh, en]) => (
-              <button key={zh} className={'chip' + (f.category === zh ? ' on' : '')} onClick={() => set('category', zh)}>{lang === 'en' ? en : zh}</button>
-            ))}
-          </div>
-        </div>
+        <CategoryPicker cats={cats} primary={f.primary_category} secondary={f.secondary_category}
+          onChange={(pc, sc) => setF((p) => ({ ...p, primary_category: pc, secondary_category: sc }))} />
         <div className="row" style={{ gap: 12 }}>
           <div className="field grow"><label>{t('itemQty')}</label><input className="input" type="number" value={f.quantity} onChange={(e) => set('quantity', e.target.value)} /></div>
           <div className="field grow"><label>{t('itemUnit')}</label><input className="input" value={f.unit} onChange={(e) => set('unit', e.target.value)} /></div>

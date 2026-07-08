@@ -86,6 +86,41 @@ export function WeekdayPicker({ value, onChange }) {
   );
 }
 
+// 采购两级分类选择（一级 + 食材二级级联，任务清单模块修改版风格）
+export function CategoryPicker({ cats, primary, secondary, onChange, compact }) {
+  const { t, lang } = useI18n();
+  if (!cats) return null;
+  const en = lang === 'en';
+  const pickPrimary = (pc) => onChange(pc, pc === '食材' ? (secondary || cats.food_sub[0][0]) : null);
+  return (
+    <div className="field">
+      {!compact && <label>{t('primaryCat')} <span className="req">*</span></label>}
+      <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+        {cats.primary.map(([zh, enn, ic]) => (
+          <button key={zh} className={'chip' + (primary === zh ? ' on' : '')} onClick={() => pickPrimary(zh)}>{ic} {en ? enn : zh}</button>
+        ))}
+      </div>
+      {primary === '食材' && <>
+        <label style={{ display: 'block', marginTop: 10 }}>{t('secondaryCat')} <span className="req">*</span></label>
+        <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+          {cats.food_sub.map(([zh, enn, ic]) => (
+            <button key={zh} className={'chip' + (secondary === zh ? ' on' : '')} onClick={() => onChange('食材', zh)}>{ic} {en ? enn : zh}</button>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// 分类中→英展示
+export function catLabel(cats, name, lang) {
+  if (!name) return '';
+  if (lang !== 'en' || !cats) return name;
+  const all = [...(cats.primary || []), ...(cats.food_sub || [])];
+  const hit = all.find((x) => x[0] === name);
+  return hit ? hit[1] : name;
+}
+
 // 把 weekdays 数组渲染成简短文字，例如 周一、周三、周五 / 每天
 export function weekdaysText(arr, t) {
   if (!arr || arr.length === 0) return '--';

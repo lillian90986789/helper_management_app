@@ -702,12 +702,137 @@ api.post('/meals/:id/transition', (req, res) => {
   res.json(mealWith(db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(m.meal_order_id)));
 });
 
+// ===== 采购模块：两级分类（第 3 节）=====
+const PRIMARY_CATEGORIES = [
+  ['食材', 'Food', '🥩'], ['宝宝用品', 'Baby', '🍼'], ['清洁用品', 'Cleaning', '🧴'],
+  ['日用品', 'Daily', '🧻'], ['厨房用品', 'Kitchen', '🍳'], ['卫生间用品', 'Bathroom', '🚿'],
+  ['女佣个人用品', 'Helper Personal', '🧕'], ['药品或医疗用品', 'Medical', '💊'],
+  ['宠物用品', 'Pet', '🐾'], ['其他', 'Other', '📦'],
+];
+const FOOD_SUBCATEGORIES = [
+  ['肉类', 'Meat', '🥩'], ['蔬菜', 'Vegetable', '🥬'], ['主食', 'Staple', '🍚'], ['水果', 'Fruit', '🍎'],
+  ['海鲜', 'Seafood', '🦐'], ['蛋奶', 'Egg & Dairy', '🥚'], ['豆制品', 'Soy', '🫛'], ['调味品', 'Condiment', '🧂'],
+  ['冷冻食品', 'Frozen', '🧊'], ['零食饮品', 'Snacks', '🥤'], ['其他食材', 'Other Food', '🍽️'],
+];
+api.get('/categories', (req, res) => res.json({ primary: PRIMARY_CATEGORIES, food_sub: FOOD_SUBCATEGORIES, gst_rate: gstRate() }));
+
+// 家庭设置：更新 GST 税率（家庭级可配置）
+api.post('/family/settings', (req, res) => {
+  const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
+  const b = req.body;
+  if (b.gst_rate !== undefined) {
+    let r = +b.gst_rate;
+    if (isNaN(r) || r < 0 || r >= 1) return res.status(400).json({ error: 'invalid_gst_rate' }); // 0–1 之间（小数）
+    db.prepare('UPDATE Family SET gst_rate=? WHERE family_id=?').run(r, family.family_id);
+  }
+  res.json(db.prepare('SELECT * FROM Family WHERE family_id=?').get(family.family_id));
+});
+
+// ===== Receipt OCR：Claude 视觉识别（第 7 节）=====
+const uploadsDir = join(process.env.DATA_DIR || join(__dirname, '..', 'data'), 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+// 小票识别的结构化 schema
+const RECEIPT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    store_name: { type: 'string' }, purchase_date: { type: 'string' }, currency: { type: 'string' },
+    subtotal: { type: 'number' }, tax: { type: 'number' }, total: { type: 'number' },
+    items: { type: 'array', items: { type: 'object', additionalProperties: false,
+      properties: { name: { type: 'string' }, quantity: { type: 'number' }, unit_price: { type: 'number' }, line_total: { type: 'number' } },
+      required: ['name', 'quantity', 'unit_price', 'line_total'] } },
+  },
+  required: ['store_name', 'purchase_date', 'currency', 'subtotal', 'tax', 'total', 'items'],
+};
+// 调用 Claude 视觉识别小票（原始 HTTPS，避免额外依赖）；无 API Key 时返回 null 走兜底
+async function claudeReceiptOCR(base64, mediaType) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return null;
+  const body = {
+    model: 'claude-opus-4-8', max_tokens: 2048,
+    output_config: { format: { type: 'json_schema', schema: RECEIPT_SCHEMA }, effort: 'low' },
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 } },
+      { type: 'text', text: '这是一张超市购物小票。请识别：商店名称、购买日期(YYYY-MM-DD)、货币、税前小计(subtotal)、消费税(tax，如 GST/VAT)、含税总金额(total)，以及每个商品的名称、数量、单价、小计。金额一律用数字，不带货币符号。日期无法识别则留空字符串。' },
+    ] }],
+  };
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { console.error('Claude OCR 失败', r.status, await r.text().catch(() => '')); return null; }
+  const data = await r.json();
+  const textBlock = (data.content || []).find((b) => b.type === 'text');
+  if (!textBlock) return null;
+  try { return { ...JSON.parse(textBlock.text), source: 'claude' }; } catch { return null; }
+}
+
+api.post('/shopping/:id/receipt-scan', async (req, res) => {
+  const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
+  if (!l) return res.status(404).json({ error: 'not found' });
+  const b = req.body;
+  const base64 = (b.image_base64 || '').replace(/^data:[^;]+;base64,/, '');
+  if (!base64) return res.status(400).json({ error: 'image_required' });
+  const mediaType = b.media_type || 'image/jpeg';
+  // 保存图片文件，静态可访问
+  const ext = (mediaType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const fname = `receipt_${l.shopping_list_id}_${Date.now()}.${ext}`;
+  try { fs.writeFileSync(join(uploadsDir, fname), Buffer.from(base64, 'base64')); } catch (e) { /* 忽略写盘失败 */ }
+  const fileUrl = `/uploads/${fname}`;
+
+  // 识别：优先 Claude，失败/无 Key 兜底（按当前录入的商品小计 + 9% GST 生成，便于演示）
+  let ocr = null;
+  try { ocr = await claudeReceiptOCR(base64, mediaType); } catch (e) { console.error('OCR error', e); }
+  const view = listWith(l);
+  if (!ocr) {
+    const sub = view.subtotal || view.items.reduce((s, i) => s + (i.estimated_price || 0) * (i.quantity || 1), 0);
+    const tax = +(sub * gstRate()).toFixed(2);
+    ocr = { source: 'mock', store_name: l.store_name || 'FairPrice', purchase_date: todayYmd(), currency: 'SGD',
+      subtotal: +sub.toFixed(2), tax, total: +(sub + tax).toFixed(2), items: [] };
+  }
+  // 落库：小票图片 + 识别总额 + 商店/日期
+  db.prepare(`UPDATE ShoppingList SET receipt_image=?, receipt_total=?, store_name=COALESCE(NULLIF(?,''),store_name), purchase_date=COALESCE(NULLIF(?,''),purchase_date), amount_match_status=? WHERE shopping_list_id=?`)
+    .run(fileUrl, ocr.total, ocr.store_name || '', ocr.purchase_date || '', matchStatus(view.helper_total, ocr.total), l.shopping_list_id);
+  res.json({ ...ocr, file_url: fileUrl, gst_rate: gstRate() });
+});
+
+// 允许误差（第 8.3 节，默认 ±0.05）
+const AMOUNT_TOLERANCE = 0.05;
+// 消费税（GST）：女佣录入的商品单价为税前价，汇总时额外加税与 receipt 税后总额核对
+// 税率为家庭级可配置项（默认新加坡 9%）
+const DEFAULT_GST_RATE = 0.09;
+function gstRate() {
+  const f = db.prepare('SELECT gst_rate FROM Family LIMIT 1').get();
+  const r = f && f.gst_rate != null ? f.gst_rate : DEFAULT_GST_RATE;
+  return (r >= 0 && r < 1) ? r : DEFAULT_GST_RATE;
+}
+function matchStatus(helperTotal, receiptTotal) {
+  if (receiptTotal == null) return 'unrecognized';
+  if (helperTotal == null) return 'manual';
+  return Math.abs(receiptTotal - helperTotal) <= AMOUNT_TOLERANCE ? 'matched' : 'mismatch';
+}
+
 // ---- 采购 ----
 function listWith(l) {
   l.items = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(l.shopping_list_id);
   l.assignee = l.assignee_id ? db.prepare('SELECT name,avatar FROM User WHERE user_id=?').get(l.assignee_id) : null;
   l.est_total = l.items.reduce((s,i)=> s + (i.estimated_price||0)*(i.quantity||1), 0);
-  l.actual_total = l.items.reduce((s,i)=> s + (i.actual_total||0), 0) + (l.other_fee||0);
+  // 女佣录入总金额 = 商品小计 + 消费税 + 其他费用（第 6.3 节公式 + GST）
+  const rate = gstRate();
+  const subtotal = +l.items.reduce((s,i)=> s + (i.actual_total||0), 0).toFixed(2);
+  const gst = +(subtotal * rate).toFixed(2);
+  l.subtotal = subtotal;
+  l.gst_rate = rate;
+  l.gst = gst;
+  l.actual_total = +(subtotal + gst + (l.other_fee||0)).toFixed(2);
+  l.helper_total = l.helper_entered_total != null ? l.helper_entered_total : l.actual_total;
+  // 差额 = Receipt - 录入（第 4.2 节）
+  l.amount_difference = (l.receipt_total != null) ? +(l.receipt_total - l.helper_total).toFixed(2) : null;
+  l.match_status = l.amount_match_status || matchStatus(l.helper_total, l.receipt_total);
+  // 一级分类占比（当前清单，第 15 节的单单版）
+  const catMap = {};
+  l.items.forEach((i) => { if (i.actual_total) { catMap[i.primary_category||'其他'] = (catMap[i.primary_category||'其他']||0) + i.actual_total; } });
+  l.category_breakdown = Object.entries(catMap).map(([k,v]) => ({ category: k, amount: +v.toFixed(2) }));
   return l;
 }
 api.get('/shopping', (req, res) => res.json(db.prepare('SELECT * FROM ShoppingList ORDER BY shopping_list_id DESC').all().map(listWith)));
@@ -737,10 +862,20 @@ api.patch('/shopping/:id', (req, res) => {
   db.prepare(`UPDATE ShoppingList SET
       title=COALESCE(@title,title), budget=COALESCE(@budget,budget), store_name=COALESCE(@store_name,store_name),
       due_time=COALESCE(@due_time,due_time), receipt_image=COALESCE(@receipt_image,receipt_image),
-      payment_method=COALESCE(@payment_method,payment_method), other_fee=COALESCE(@other_fee,other_fee)
+      payment_method=COALESCE(@payment_method,payment_method), other_fee=COALESCE(@other_fee,other_fee),
+      purchase_date=COALESCE(@purchase_date,purchase_date), receipt_total=COALESCE(@receipt_total,receipt_total),
+      helper_entered_total=COALESCE(@helper_entered_total,helper_entered_total),
+      difference_reason=COALESCE(@difference_reason,difference_reason),
+      reimbursement_status=COALESCE(@reimbursement_status,reimbursement_status)
     WHERE shopping_list_id=@id`)
     .run({ title:b.title??null, budget:b.budget??null, store_name:b.store_name??null, due_time:b.due_time??null,
-      receipt_image:b.receipt_image??null, payment_method:b.payment_method??null, other_fee:b.other_fee??null, id:l.shopping_list_id });
+      receipt_image:b.receipt_image??null, payment_method:b.payment_method??null, other_fee:b.other_fee??null,
+      purchase_date:b.purchase_date??null, receipt_total:b.receipt_total??null, helper_entered_total:b.helper_entered_total??null,
+      difference_reason:b.difference_reason??null, reimbursement_status:b.reimbursement_status??null, id:l.shopping_list_id });
+  // 重新核对金额（第 8 节）
+  const fresh = listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(l.shopping_list_id));
+  db.prepare('UPDATE ShoppingList SET amount_match_status=? WHERE shopping_list_id=?')
+    .run(matchStatus(fresh.helper_total, fresh.receipt_total), l.shopping_list_id);
   res.json(listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(l.shopping_list_id)));
 });
 // 雇主向清单添加商品（PRD 7.13 添加采购商品页）
@@ -748,10 +883,12 @@ api.post('/shopping/:id/items', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
   if (!l) return res.status(404).json({ error: 'not found' });
   const b = req.body;
+  const pc = b.primary_category || '食材';
   const r = db.prepare(`INSERT INTO ShoppingItem
-    (shopping_list_id,name,name_en,category,image_url,quantity,unit,brand,specification,estimated_price,budget_limit,allow_substitute,urgency,notes,status)
-    VALUES (@shopping_list_id,@name,@name_en,@category,@image_url,@quantity,@unit,@brand,@specification,@estimated_price,@budget_limit,@allow_substitute,@urgency,@notes,'to_buy')`)
-    .run({ shopping_list_id: l.shopping_list_id, name: b.name || '', name_en: b.name_en || '', category: b.category || '食材',
+    (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,brand,specification,estimated_price,budget_limit,allow_substitute,urgency,notes,status)
+    VALUES (@shopping_list_id,@name,@name_en,@category,@pc,@sc,@image_url,@quantity,@unit,@brand,@specification,@estimated_price,@budget_limit,@allow_substitute,@urgency,@notes,'to_buy')`)
+    .run({ shopping_list_id: l.shopping_list_id, name: b.name || '', name_en: b.name_en || '', category: b.category || pc,
+      pc, sc: pc === '食材' ? (b.secondary_category || '其他食材') : null,
       image_url: b.image_url || '🛒', quantity: b.quantity || 1, unit: b.unit || '件', brand: b.brand || '',
       specification: b.specification || '', estimated_price: b.estimated_price || 0, budget_limit: b.budget_limit || 0,
       allow_substitute: b.allow_substitute ? 1 : 0, urgency: b.urgency || 'normal', notes: b.notes || '' });
@@ -763,13 +900,33 @@ api.delete('/items/:id', (req, res) => {
 });
 api.post('/shopping/:id/transition', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
-  const { to } = req.body;
-  db.prepare('UPDATE ShoppingList SET status=? WHERE shopping_list_id=?').run(to, l.shopping_list_id);
-  if (to==='pending_confirm') notify(l.family_id,'shopping','采购待确认','女佣已提交采购账目','shopping',l.shopping_list_id,'employer');
-  if (to==='confirmed') notify(l.family_id,'shopping','采购已确认','雇主已确认账目','shopping',l.shopping_list_id,'maid');
+  const { to, employer_confirmed_total } = req.body;
+  const now = new Date().toISOString();
+  const view = listWith(l);
+  if (to === 'pending_confirm') {
+    db.prepare("UPDATE ShoppingList SET status=?, submitted_at=?, helper_entered_total=COALESCE(helper_entered_total,?), purchase_date=COALESCE(purchase_date,?) WHERE shopping_list_id=?")
+      .run(to, now, view.helper_total, todayYmd(), l.shopping_list_id);
+    notify(l.family_id,'shopping','采购待确认', view.match_status==='mismatch' ? ('金额不一致，差额 S$'+Math.abs(view.amount_difference||0).toFixed(2)) : '女佣已提交采购账目','shopping',l.shopping_list_id,'employer');
+  } else if (to === 'confirmed') {
+    // 雇主确认金额，默认取 receipt 识别额，否则女佣录入额（第 13.2 / 17.5 节）
+    const confirmed = employer_confirmed_total != null ? employer_confirmed_total : (l.receipt_total != null ? l.receipt_total : view.helper_total);
+    // 女佣垫付 → 自动进入待报销（第 18.2 节）
+    const reimb = l.payment_method === '女佣垫付' ? 'to_reimburse' : (l.reimbursement_status || 'none');
+    db.prepare("UPDATE ShoppingList SET status=?, employer_confirmed_total=?, confirmed_at=?, reimbursement_status=? WHERE shopping_list_id=?")
+      .run(to, confirmed, now, reimb, l.shopping_list_id);
+    notify(l.family_id,'shopping','采购已确认','雇主已确认账目 S$'+(+confirmed).toFixed(2),'shopping',l.shopping_list_id,'maid');
+  } else if (to === 'reimbursed') {
+    db.prepare("UPDATE ShoppingList SET reimbursement_status='reimbursed' WHERE shopping_list_id=?").run(l.shopping_list_id);
+    notify(l.family_id,'shopping','已报销','雇主已完成报销','shopping',l.shopping_list_id,'maid');
+  } else if (to === 'returned') {
+    db.prepare("UPDATE ShoppingList SET status='buying' WHERE shopping_list_id=?").run(l.shopping_list_id);
+    notify(l.family_id,'shopping','采购被退回', req.body.reason || '雇主要求修改账目','shopping',l.shopping_list_id,'maid');
+  } else {
+    db.prepare('UPDATE ShoppingList SET status=? WHERE shopping_list_id=?').run(to, l.shopping_list_id);
+  }
   res.json(listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(l.shopping_list_id)));
 });
-// 商品：录价 / 标记状态 / 替代审核
+// 商品：录价 / 标记状态 / 改分类 / 替代审核
 api.patch('/items/:id', (req, res) => {
   const it = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(req.params.id);
   const b = req.body;
@@ -777,8 +934,12 @@ api.patch('/items/:id', (req, res) => {
   const ap = b.actual_unit_price ?? it.actual_unit_price;
   const disc = b.discount ?? it.discount ?? 0;
   const total = (aq!=null && ap!=null) ? (aq*ap - disc) : it.actual_total;
-  db.prepare(`UPDATE ShoppingItem SET status=COALESCE(@status,status), actual_quantity=@aq, actual_unit_price=@ap, discount=@disc, actual_total=@total WHERE shopping_item_id=@id`)
-    .run({ status:b.status??null, aq, ap, disc, total, id:it.shopping_item_id });
+  // 食材必须有二级分类，否则二级留空；一级不填默认「其他」
+  const pc = b.primary_category ?? it.primary_category ?? '其他';
+  const sc = b.secondary_category !== undefined ? b.secondary_category : it.secondary_category;
+  db.prepare(`UPDATE ShoppingItem SET status=COALESCE(@status,status), actual_quantity=@aq, actual_unit_price=@ap, discount=@disc, actual_total=@total,
+      primary_category=@pc, secondary_category=@sc, name=COALESCE(@name,name) WHERE shopping_item_id=@id`)
+    .run({ status:b.status??null, aq, ap, disc, total, pc, sc: pc==='食材' ? (sc||null) : null, name: b.name??null, id:it.shopping_item_id });
   res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(it.shopping_item_id));
 });
 api.post('/items/:id/substitute', (req, res) => {
@@ -802,6 +963,65 @@ api.post('/items/:id/substitute/review', (req, res) => {
   res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(it.shopping_item_id));
 });
 
+// ===== 月度账目汇总 + 分类占比统计（第 14–17 节）=====
+// 采购记录归属月份：purchase_date > confirmed_at > created_at（第 17.2 节优先级）
+const listMonth = (l) => (l.purchase_date || l.confirmed_at || l.created_at || '').slice(0, 7); // YYYY-MM
+api.get('/expense/monthly', (req, res) => {
+  const now = new Date();
+  const year = req.query.year ? +req.query.year : now.getFullYear();
+  const month = req.query.month ? +req.query.month : now.getMonth() + 1;
+  const ym = `${year}-${pad(month)}`;
+  const all = db.prepare('SELECT * FROM ShoppingList').all();
+  const inMonth = all.filter((l) => listMonth(l) === ym);
+  const confirmed = inMonth.filter((l) => ['confirmed', 'reimbursed'].includes(l.status));
+  const pending = inMonth.filter((l) => l.status === 'pending_confirm');
+  const confirmedAmt = (l) => l.employer_confirmed_total != null ? l.employer_confirmed_total : listWith(l).helper_total;
+
+  // 指标卡片（第 14.3 节）
+  const totalConfirmed = confirmed.reduce((s, l) => s + confirmedAmt(l), 0);
+  const pendingAmt = pending.reduce((s, l) => s + listWith(l).helper_total, 0);
+  const reimbursed = confirmed.filter((l) => l.reimbursement_status === 'reimbursed').reduce((s, l) => s + confirmedAmt(l), 0);
+  const toReimburse = confirmed.filter((l) => l.reimbursement_status === 'to_reimburse').reduce((s, l) => s + confirmedAmt(l), 0);
+  const count = confirmed.length;
+
+  // 分类占比：以已确认清单的商品实际总价为基数（第 17.3 / 17.4 节）
+  const items = confirmed.flatMap((l) => db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(l.shopping_list_id));
+  const catTotal = items.reduce((s, i) => s + (i.actual_total || 0), 0) || 1;
+  const primaryMap = {}, foodMap = {};
+  items.forEach((i) => {
+    const amt = i.actual_total || 0; if (!amt) return;
+    const pc = i.primary_category || '其他';
+    primaryMap[pc] = (primaryMap[pc] || 0) + amt;
+    if (pc === '食材') { const sc = i.secondary_category || '其他食材'; foodMap[sc] = (foodMap[sc] || 0) + amt; }
+  });
+  const foodTotal = primaryMap['食材'] || 0;
+  const primary = Object.entries(primaryMap).map(([category, amount]) => ({
+    category, amount: +amount.toFixed(2), pct: +(amount / catTotal * 100).toFixed(1),
+  })).sort((a, b) => b.amount - a.amount);
+  const food = Object.entries(foodMap).map(([category, amount]) => ({
+    category, amount: +amount.toFixed(2),
+    pct_of_total: +(amount / catTotal * 100).toFixed(1),
+    pct_of_food: foodTotal ? +(amount / foodTotal * 100).toFixed(1) : 0,
+  })).sort((a, b) => b.amount - a.amount);
+
+  // 采购记录列表（第 16 节）
+  const records = inMonth.map((l) => {
+    const v = listWith(l);
+    return { shopping_list_id: l.shopping_list_id, title: l.title, store_name: l.store_name,
+      assignee: v.assignee?.name, item_count: v.items.length, purchase_date: l.purchase_date || (l.confirmed_at||'').slice(0,10),
+      amount: +confirmedAmt(l).toFixed(2), match_status: v.match_status, status: l.status,
+      reimbursement_status: l.reimbursement_status, counted: ['confirmed','reimbursed'].includes(l.status) };
+  }).sort((a, b) => (b.purchase_date||'').localeCompare(a.purchase_date||''));
+
+  res.json({
+    year, month,
+    summary: { total_confirmed: +totalConfirmed.toFixed(2), pending: +pendingAmt.toFixed(2),
+      reimbursed: +reimbursed.toFixed(2), to_reimburse: +toReimburse.toFixed(2),
+      count, average: count ? +(totalConfirmed / count).toFixed(2) : 0, food_total: +foodTotal.toFixed(2) },
+    primary, food, records,
+  });
+});
+
 // ---- 通知 ----
 api.get('/notifications', (req, res) => {
   const { role } = req.query;
@@ -813,6 +1033,9 @@ api.get('/notifications', (req, res) => {
 api.post('/notifications/:id/read', (req,res)=>{ db.prepare('UPDATE Notification SET is_read=1 WHERE notification_id=?').run(req.params.id); res.json({ok:true}); });
 
 app.use('/api', api);
+
+// ---- 小票图片静态访问 ----
+app.use('/uploads', express.static(uploadsDir));
 
 // ---- 静态前端 ----
 const dist = join(__dirname, '..', 'web', 'dist');

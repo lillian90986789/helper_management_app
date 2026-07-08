@@ -1,11 +1,25 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n.jsx';
+import { api } from '../api.js';
+import { useApp } from '../App.jsx';
 
 export default function Me({ role }) {
   const { t, lang, setLang } = useI18n();
   const nav = useNavigate();
+  const { showToast } = useApp();
   const isEmp = role === 'employer';
   const user = isEmp ? { name: '陈先生', avatar: '👨🏻‍💼', role: t('employer') } : { name: 'Siti', avatar: '👩🏽‍🦱', role: t('maid') };
+
+  // 家庭级 GST 税率设置（雇主可配置）
+  const [gstPct, setGstPct] = useState(null);
+  useEffect(() => { if (isEmp) api.bootstrap().then((b) => setGstPct(Math.round((b.family?.gst_rate ?? 0.09) * 100 * 100) / 100)); }, [isEmp]);
+  const saveGst = async (pct) => {
+    const p = +pct; if (isNaN(p) || p < 0 || p >= 100) return showToast(lang === 'en' ? 'Enter 0–99' : '请输入 0–99');
+    setGstPct(p);
+    try { await api.saveFamilySettings({ gst_rate: p / 100 }); showToast((lang === 'en' ? 'GST saved: ' : '消费税已保存：') + p + '%'); }
+    catch { showToast(lang === 'en' ? 'Save failed' : '保存失败'); }
+  };
 
   const empItems = [
     ['👨‍👩‍👧 ' + t('familyInfo')], ['👥 ' + t('members'), '/members'], ['🧹 ' + (lang==='en'?'Helper Management':'女佣管理'), '/members'],
@@ -36,6 +50,30 @@ export default function Me({ role }) {
             <button className={'opt' + (lang === 'en' ? ' on' : '')} onClick={() => setLang('en')}>🇬🇧 English</button>
           </div>
         </div>
+
+        {/* 采购设置：GST 消费税率（雇主可配置） */}
+        {isEmp && gstPct != null && (
+          <>
+            <div className="section-title">🧾 {lang === 'en' ? 'Shopping Settings' : '采购设置'}</div>
+            <div className="card">
+              <div className="spread"><span className="bold small">{lang === 'en' ? 'GST rate' : '消费税率 (GST)'}</span>
+                <span className="bold" style={{ color: 'var(--teal)' }}>{gstPct}%</span></div>
+              <div className="tiny muted mt4">{lang === 'en' ? 'Added on top of item subtotal when settling and reconciling receipts.' : '结算汇总与小票核对时，在商品小计基础上额外计入。'}</div>
+              <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible', marginTop: 10 }}>
+                {[0, 6, 7, 8, 9, 10].map((p) => (
+                  <button key={p} className={'chip' + (gstPct === p ? ' on' : '')} onClick={() => saveGst(p)}>{p}%</button>
+                ))}
+              </div>
+              <div className="row" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
+                <span className="tiny muted">{lang === 'en' ? 'Custom' : '自定义'}</span>
+                <input className="input" style={{ maxWidth: 90 }} type="number" step="0.1" min="0" max="99" value={gstPct}
+                  onChange={(e) => setGstPct(e.target.value)} />
+                <span className="tiny muted">%</span>
+                <button className="btn sm primary" onClick={() => saveGst(gstPct)}>{t('save')}</button>
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="section-title">⚙️ {isEmp ? t('familyInfo') : t('myProfile')}</div>
         <div className="card" style={{ padding: '4px 16px' }}>

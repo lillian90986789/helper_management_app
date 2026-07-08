@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Routes, Route, NavLink, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useI18n } from './i18n.jsx';
 import { Toast } from './ui.jsx';
@@ -20,6 +20,7 @@ import ShoppingListNew from './pages/ShoppingListNew.jsx';
 import ShoppingItemNew from './pages/ShoppingItemNew.jsx';
 import ShoppingSettle from './pages/ShoppingSettle.jsx';
 import SubstituteReview from './pages/SubstituteReview.jsx';
+import MonthlyExpense from './pages/MonthlyExpense.jsx';
 import Notifications from './pages/Notifications.jsx';
 import Members from './pages/Members.jsx';
 import Me from './pages/Me.jsx';
@@ -68,8 +69,14 @@ export default function App() {
   const [toast, setToast] = useState('');
   const showToast = useCallback((m) => { setToast(m); setTimeout(() => setToast(''), 1600); }, []);
 
-  // 当前角色由路径前缀决定
-  const role = loc.pathname.startsWith('/m') ? 'maid' : 'employer';
+  // 角色「粘性」：在 /e 或 /m 下更新并记住，共享详情页（/shopping-list、/task 等无前缀路由）沿用上次角色
+  const [role, setRole] = useState(() => { try { return localStorage.getItem('hf_role') || 'employer'; } catch { return 'employer'; } });
+  useEffect(() => {
+    let r = null;
+    if (loc.pathname.startsWith('/m')) r = 'maid';
+    else if (loc.pathname.startsWith('/e')) r = 'employer';
+    if (r) { setRole(r); try { localStorage.setItem('hf_role', r); } catch {} }
+  }, [loc.pathname]);
   const showTabs = /^\/(e|m)\//.test(loc.pathname);
 
   const switchRole = (r) => nav(r === 'employer' ? '/e/home' : '/m/today');
@@ -121,6 +128,7 @@ export default function App() {
               <Route path="/shopping-list/:id/add-item" element={<ShoppingItemNew />} />
               <Route path="/shopping-list/:id/settle" element={<ShoppingSettle />} />
               <Route path="/substitute/:itemId" element={<SubstituteReview />} />
+              <Route path="/expense" element={<MonthlyExpense />} />
               <Route path="/members" element={<Members />} />
               <Route path="/notifications" element={<Notifications />} />
             </Routes>

@@ -18,7 +18,10 @@ function ShoppingOverview({ role }) {
   const { data: lists } = useAsync(() => api.shoppingLists());
   return (
     <>
-      <div className="topbar"><h1>{t('shopping')}</h1>{role === 'employer' && <button className="iconbtn" onClick={() => nav('/shopping-new')}>＋</button>}</div>
+      <div className="topbar"><h1>{t('shopping')}</h1>
+        {role === 'employer' && <button className="iconbtn" onClick={() => nav('/expense')} title={t('monthlyExpense')}>📊</button>}
+        {role === 'employer' && <button className="iconbtn" onClick={() => nav('/shopping-new')}>＋</button>}
+      </div>
       <div className="content">
         {!lists ? <Empty text="加载中…" /> : lists.map((l) => (
           <div key={l.shopping_list_id} className="card tap" onClick={() => nav('/shopping-list/' + l.shopping_list_id)}>
@@ -103,6 +106,45 @@ function ShoppingDetail() {
           <button className="btn outline block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/add-item')}>＋ {t('addItem')}</button>
         )}
 
+        {/* 金额核对 / 雇主审核对比（第 8 / 13 节） */}
+        {(l.receipt_total != null || l.status === 'pending_confirm' || l.status === 'confirmed') && (
+          <>
+            <div className="section-title">🧮 {lang === 'en' ? 'Amount Check' : '金额核对'}</div>
+            <div className="card">
+              {l.subtotal != null && <Cmp label={t('itemsSubtotal')} val={l.subtotal} />}
+              {l.gst != null && <Cmp label={t('gst') + '（' + Math.round((l.gst_rate||0.09)*100) + '%）'} val={l.gst} sign />}
+              <Cmp label={t('helperTotal')} val={l.helper_total} bold />
+              <Cmp label={t('receiptTotal')} val={l.receipt_total} />
+              <Cmp label={t('diff')} val={l.amount_difference} sign color={Math.abs(l.amount_difference||0) <= 0.05 ? 'var(--green)' : 'var(--red)'} />
+              <Cmp label={t('budget')} val={l.budget} />
+              <Cmp label={t('budgetDiff')} val={l.helper_total != null ? +(l.helper_total - l.budget).toFixed(2) : null} sign />
+              {l.employer_confirmed_total != null && <Cmp label={t('confirmedTotal')} val={l.employer_confirmed_total} bold />}
+              <div style={{ marginTop: 10, padding: 10, borderRadius: 10, fontSize: 13,
+                background: l.match_status==='matched' ? '#dcfce7' : l.match_status==='mismatch' ? '#fee2e2' : '#f1f5f9',
+                color: l.match_status==='matched' ? '#166534' : l.match_status==='mismatch' ? '#b91c1c' : '#475569' }}>
+                {l.match_status==='matched' ? '✅ '+t('amtMatched') : l.match_status==='mismatch' ? '⚠️ '+t('amtMismatch') : 'ℹ️ '+t('amtUnrecognized')}
+                {l.difference_reason && <div className="tiny" style={{ marginTop: 4 }}>{lang==='en'?'Reason: ':'差异原因：'}{l.difference_reason}</div>}
+              </div>
+              <div className="row mt12" style={{ gap: 8, flexWrap: 'wrap' }}>
+                {l.payment_method && <span className="badge gray">💳 {l.payment_method}</span>}
+                {l.reimbursement_status && l.reimbursement_status!=='none' && <span className="badge amber">{l.reimbursement_status==='reimbursed'?t('reimDone'):t('reimTo')}</span>}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* 分类小计（第 13.3 节） */}
+        {l.category_breakdown?.length > 0 && (
+          <div className="card">
+            <div className="bold small" style={{ marginBottom: 8 }}>🏷️ {lang==='en'?'By Category':'分类小计'}</div>
+            {l.category_breakdown.map((c) => (
+              <div key={c.category} className="spread" style={{ padding: '4px 0' }}>
+                <span className="small">{c.category}</span><span className="small bold">S${c.amount.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* 小票 */}
         {l.receipt_image && <>
           <div className="section-title">🧾 {lang === 'en' ? 'Receipt' : '小票'}</div>
@@ -116,10 +158,22 @@ function ShoppingDetail() {
       {role === 'maid'
         ? <div className="actionbar"><button className="btn primary block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/settle')}>💰 {t('enterPrice')} · {t('settle')}</button></div>
         : <div className="actionbar">
-            {l.status === 'pending_confirm'
-              ? <button className="btn primary block" onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'confirmed' }); showToast(t('confirmAccount') + ' ✓'); reload(); }}>✓ {t('confirmAccount')}</button>
-              : <button className="btn outline block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/settle')}>{t('settle')}</button>}
+            {l.status === 'pending_confirm' ? <>
+              <button className="btn danger" onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'returned' }); showToast(t('returnEdit') + ' ✓'); reload(); }}>↩ {t('returnEdit')}</button>
+              <button className="btn primary" style={{ flex: 2 }} onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'confirmed' }); showToast(t('confirmAccount') + ' ✓'); reload(); }}>✓ {t('confirmAccount')}</button>
+            </> : l.status === 'confirmed' && l.reimbursement_status === 'to_reimburse'
+              ? <button className="btn primary block" onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'reimbursed' }); showToast(t('markReimbursed') + ' ✓'); reload(); }}>💵 {t('markReimbursed')}</button>
+              : <button className="btn outline block" onClick={() => nav('/e/shopping')}>{t('viewProgress')}</button>}
           </div>}
     </>
+  );
+}
+
+function Cmp({ label, val, sign, bold, color }) {
+  return (
+    <div className="spread" style={{ padding: '4px 0' }}>
+      <span className={'small ' + (bold ? 'bold' : 'muted')}>{label}</span>
+      <span className={bold ? 'bold' : 'small'} style={{ color }}>{val == null ? '—' : (sign && val >= 0 ? '+' : '') + 'S$' + (+val).toFixed(2)}</span>
+    </div>
   );
 }

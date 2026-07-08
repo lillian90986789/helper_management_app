@@ -12,3 +12,6 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/app/data
+      # 启用 Receipt 小票真实识别（Claude 视觉）：填入你自己的 Anthropic API Key。
+      # 不配则走「模拟识别」演示。切勿把真实 Key 提交进 git —— 生产建议改为从 .env 注入。
+      # - ANTHROPIC_API_KEY=sk-ant-你的key

@@ -173,18 +173,50 @@ const sl1 = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,bu
   .run(familyId, '今日生鲜采购', maid, 80, 'NTUC FairPrice', at(16,0), 'buying', employer).lastInsertRowid;
 
 function addItem(it){
+  const pc = it.primary_category || '食材';
   return db.prepare(`INSERT INTO ShoppingItem
-    (shopping_list_id,name,name_en,category,image_url,quantity,unit,brand,specification,estimated_price,budget_limit,allow_substitute,urgency,notes,source_recipe_id,status,actual_quantity,actual_unit_price,discount,actual_total,sub_name,sub_brand,sub_spec,sub_price,sub_reason)
-    VALUES (@shopping_list_id,@name,@name_en,@category,@image_url,@quantity,@unit,@brand,@specification,@estimated_price,@budget_limit,@allow_substitute,@urgency,@notes,@source_recipe_id,@status,@actual_quantity,@actual_unit_price,@discount,@actual_total,@sub_name,@sub_brand,@sub_spec,@sub_price,@sub_reason)`)
-    .run({ shopping_list_id:sl1, name_en:'', category:'食材', image_url:'🛒', quantity:1, unit:'份', brand:'', specification:'', estimated_price:0, budget_limit:0, allow_substitute:1, urgency:'normal', notes:'', source_recipe_id:null, status:'to_buy', actual_quantity:null, actual_unit_price:null, discount:0, actual_total:null, sub_name:'', sub_brand:'', sub_spec:'', sub_price:null, sub_reason:'', ...it }).lastInsertRowid;
+    (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,brand,specification,estimated_price,budget_limit,allow_substitute,urgency,notes,source_recipe_id,status,actual_quantity,actual_unit_price,discount,actual_total,sub_name,sub_brand,sub_spec,sub_price,sub_reason)
+    VALUES (@shopping_list_id,@name,@name_en,@category,@primary_category,@secondary_category,@image_url,@quantity,@unit,@brand,@specification,@estimated_price,@budget_limit,@allow_substitute,@urgency,@notes,@source_recipe_id,@status,@actual_quantity,@actual_unit_price,@discount,@actual_total,@sub_name,@sub_brand,@sub_spec,@sub_price,@sub_reason)`)
+    .run({ shopping_list_id:sl1, name_en:'', category:'食材', primary_category:pc, secondary_category: pc==='食材' ? '其他食材' : null,
+      image_url:'🛒', quantity:1, unit:'份', brand:'', specification:'', estimated_price:0, budget_limit:0, allow_substitute:1, urgency:'normal', notes:'', source_recipe_id:null, status:'to_buy', actual_quantity:null, actual_unit_price:null, discount:0, actual_total:null, sub_name:'', sub_brand:'', sub_spec:'', sub_price:null, sub_reason:'', ...it, primary_category:pc, secondary_category: it.secondary_category ?? (pc==='食材'?'其他食材':null) }).lastInsertRowid;
 }
 
-addItem({ name:'番茄', name_en:'Tomato', image_url:'🍅', quantity:6, unit:'个', estimated_price:3.0, budget_limit:5, status:'bought', actual_quantity:6, actual_unit_price:0.5, actual_total:3.0, source_recipe_id:rc1 });
-addItem({ name:'鸡蛋', name_en:'Eggs', image_url:'🥚', quantity:1, unit:'盒', specification:'10个装', estimated_price:4.5, budget_limit:6, status:'bought', actual_quantity:1, actual_unit_price:4.2, discount:0.3, actual_total:4.2, source_recipe_id:rc1 });
-addItem({ name:'鲈鱼', name_en:'Sea Bass', image_url:'🐟', quantity:1, unit:'条', specification:'约600g', estimated_price:12, budget_limit:15, status:'out_of_stock', notes:'要新鲜', source_recipe_id:rc2 });
-addItem({ name:'蒸鱼豉油', name_en:'Steamed Fish Soy', image_url:'🍶', quantity:1, unit:'瓶', brand:'李锦记', estimated_price:5, budget_limit:6, allow_substitute:1, status:'sub_requested', sub_name:'生抽', sub_brand:'海天', sub_spec:'500ml', sub_price:4.5, sub_reason:'蒸鱼豉油缺货，生抽可替代', source_recipe_id:rc2 });
-addItem({ name:'南瓜', name_en:'Pumpkin', image_url:'🎃', quantity:1, unit:'个', specification:'小', estimated_price:2.5, budget_limit:4, status:'bought', actual_quantity:1, actual_unit_price:2.3, actual_total:2.3, source_recipe_id:rc3 });
-addItem({ name:'宝宝大米', name_en:'Baby Rice', image_url:'🍚', quantity:1, unit:'包', brand:'有机', estimated_price:8, budget_limit:10, status:'to_buy', urgency:'urgent', source_recipe_id:rc3 });
+addItem({ name:'番茄', name_en:'Tomato', image_url:'🍅', quantity:6, unit:'个', primary_category:'食材', secondary_category:'蔬菜', estimated_price:3.0, budget_limit:5, status:'bought', actual_quantity:6, actual_unit_price:0.5, actual_total:3.0, source_recipe_id:rc1 });
+addItem({ name:'鸡蛋', name_en:'Eggs', image_url:'🥚', quantity:1, unit:'盒', specification:'10个装', primary_category:'食材', secondary_category:'蛋奶', estimated_price:4.5, budget_limit:6, status:'bought', actual_quantity:1, actual_unit_price:4.2, discount:0.3, actual_total:4.2, source_recipe_id:rc1 });
+addItem({ name:'鲈鱼', name_en:'Sea Bass', image_url:'🐟', quantity:1, unit:'条', specification:'约600g', primary_category:'食材', secondary_category:'海鲜', estimated_price:12, budget_limit:15, status:'out_of_stock', notes:'要新鲜', source_recipe_id:rc2 });
+addItem({ name:'蒸鱼豉油', name_en:'Steamed Fish Soy', image_url:'🍶', quantity:1, unit:'瓶', brand:'李锦记', primary_category:'食材', secondary_category:'调味品', estimated_price:5, budget_limit:6, allow_substitute:1, status:'sub_requested', sub_name:'生抽', sub_brand:'海天', sub_spec:'500ml', sub_price:4.5, sub_reason:'蒸鱼豉油缺货，生抽可替代', source_recipe_id:rc2 });
+addItem({ name:'南瓜', name_en:'Pumpkin', image_url:'🎃', quantity:1, unit:'个', specification:'小', primary_category:'食材', secondary_category:'蔬菜', estimated_price:2.5, budget_limit:4, status:'bought', actual_quantity:1, actual_unit_price:2.3, actual_total:2.3, source_recipe_id:rc3 });
+addItem({ name:'宝宝大米', name_en:'Baby Rice', image_url:'🍚', quantity:1, unit:'包', brand:'有机', primary_category:'宝宝用品', estimated_price:8, budget_limit:10, status:'to_buy', urgency:'urgent', source_recipe_id:rc3 });
+
+// ---- 已确认采购（用于月度账目统计，本月）----
+const monthDay = (d) => { const x = new Date(today); x.setDate(d); return iso(x); };
+function addConfirmedList(title, store, dateStr, budget, confirmedTotal, receiptTotal, reimb, items){
+  const lid = db.prepare(`INSERT INTO ShoppingList
+    (family_id,title,assignee_id,budget,store_name,purchase_date,status,payment_method,receipt_image,receipt_total,helper_entered_total,employer_confirmed_total,amount_match_status,reimbursement_status,confirmed_at,submitted_at,creator_id)
+    VALUES (?,?,?,?,?,?, 'confirmed', ?, '🧾', ?, ?, ?, ?, ?, datetime('now'), datetime('now'), ?)`)
+    .run(familyId, title, maid, budget, store, dateStr, reimb==='to_reimburse'?'女佣垫付':'雇主现金', receiptTotal, confirmedTotal, confirmedTotal,
+      Math.abs((receiptTotal||0)-(confirmedTotal||0))<=0.05?'matched':'mismatch', reimb, employer).lastInsertRowid;
+  items.forEach((it) => db.prepare(`INSERT INTO ShoppingItem
+    (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,estimated_price,actual_quantity,actual_unit_price,discount,actual_total,status)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'bought')`)
+    .run(lid, it[0], it[1]||'', it[2], it[2], it[3]||null, it[4]||'🛒', it[5]||1, it[6]||'件', it[7], it[5]||1, it[7], 0, it[7]));
+  return lid;
+}
+// 本月三笔已确认采购，覆盖多种一级/食材二级分类
+addConfirmedList('FairPrice 周末采购', 'NTUC FairPrice', monthDay(3), 90, 78.30, 78.30, 'none', [
+  ['牛肉','Beef','食材','肉类','🥩',1,'份',18.5], ['鸡胸肉','Chicken','食材','肉类','🍗',1,'份',9.8],
+  ['西兰花','Broccoli','食材','蔬菜','🥦',2,'份',5.0], ['菠菜','Spinach','食材','蔬菜','🥬',1,'份',2.8],
+  ['大米','Rice','食材','主食','🍚',1,'袋',12.0], ['苹果','Apple','食材','水果','🍎',6,'个',7.2],
+  ['三文鱼','Salmon','食材','海鲜','🐟',1,'份',14.0], ['湿纸巾','Wet Wipes','宝宝用品',null,'🧻',2,'包',6.0],
+  ['洗洁精','Dish Soap','清洁用品',null,'🧴',1,'瓶',3.0],
+]);
+addConfirmedList('宝宝用品采购', 'Guardian', monthDay(6), 60, 52.00, 52.00, 'to_reimburse', [
+  ['奶粉','Formula','宝宝用品',null,'🍼',1,'罐',38.0], ['纸尿裤','Diapers','宝宝用品',null,'🧷',1,'包',14.0],
+]);
+addConfirmedList('日常清洁补货', 'Sheng Siong', monthDay(1), 40, 34.20, 35.00, 'none', [
+  ['洗衣液','Laundry','清洁用品',null,'🧴',1,'瓶',12.5], ['厨房纸','Paper Towel','厨房用品',null,'🧻',2,'卷',6.4],
+  ['牙膏','Toothpaste','日用品',null,'🪥',2,'支',7.8], ['猪肉末','Pork Mince','食材','肉类','🥩',1,'份',7.5],
+]);
 
 // ---- 通知 ----
 const notis = [
