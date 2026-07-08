@@ -22,6 +22,7 @@ export const api = {
   bootstrap: () => req('/bootstrap'),
   members: () => req('/members'),
   addMember: (body) => req('/members', { method: 'POST', body }),
+  updateUser: (id, body) => req(`/users/${id}`, { method: 'PATCH', body }),
   removeMember: (id) => req(`/members/${id}/remove`, { method: 'POST' }),
   regenInvite: () => req('/family/invite-code', { method: 'POST' }),
   join: (body) => req('/join', { method: 'POST', body }),

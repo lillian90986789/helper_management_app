@@ -9,16 +9,46 @@ export default function Me({ role }) {
   const nav = useNavigate();
   const { showToast } = useApp();
   const isEmp = role === 'employer';
-  // 女佣信息读取登录时（邀请码加入）记住的身份，未登录则用演示默认 Siti
-  const maid = (() => { try { return JSON.parse(localStorage.getItem('hf_maid') || 'null'); } catch { return null; } })();
-  const family = maid?.family || '陈先生家';
-  const user = isEmp
-    ? { name: '陈先生', avatar: '👨🏻‍💼', role: t('employer') }
-    : { name: maid?.name || 'Siti', avatar: maid?.avatar || '👩🏽‍🦱', role: t('maid') };
+  const en = lang === 'en';
+  const AVATARS = isEmp ? ['👨🏻‍💼','👩🏻‍💼','🧑🏽','👨🏽','👩🏽','👵🏻','👴🏻'] : ['👩🏽‍🦱','👩🏻‍🦰','👱🏽‍♀️','🧑🏽','👩🏻','👩🏿'];
+
+  // 当前登录用户资料（雇主从后端读，女佣读加入时记住的身份）
+  const [profile, setProfile] = useState(null);   // {user_id, name, avatar}
+  const [family, setFamily] = useState(isEmp ? '' : '陈先生家');
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftAvatar, setDraftAvatar] = useState('');
 
   // 家庭级 GST 税率设置（雇主可配置）
   const [gstPct, setGstPct] = useState(null);
-  useEffect(() => { if (isEmp) api.bootstrap().then((b) => setGstPct(Math.round((b.family?.gst_rate ?? 0.09) * 100 * 100) / 100)); }, [isEmp]);
+  useEffect(() => {
+    if (isEmp) {
+      api.bootstrap().then((b) => {
+        setGstPct(Math.round((b.family?.gst_rate ?? 0.09) * 100 * 100) / 100);
+        const e = (b.users || []).find((u) => u.role === 'employer') || {};
+        setProfile({ user_id: e.user_id, name: e.display_name || e.name || '陈先生', avatar: e.avatar || '👨🏻‍💼' });
+        setFamily(b.family?.family_name || '我的家庭');
+      });
+    } else {
+      let m = null; try { m = JSON.parse(localStorage.getItem('hf_maid') || 'null'); } catch {}
+      setProfile({ user_id: m?.user_id || 2, name: m?.name || 'Siti', avatar: m?.avatar || '👩🏽‍🦱' });
+      setFamily(m?.family || '陈先生家');
+    }
+  }, [isEmp]);
+
+  const openEdit = () => { setDraftName(profile?.name || ''); setDraftAvatar(profile?.avatar || AVATARS[0]); setEditing(true); };
+  const saveProfile = async () => {
+    if (!draftName.trim()) return showToast(en ? 'Enter a name' : '请填写姓名');
+    try {
+      const body = { name: draftName.trim(), avatar: draftAvatar };
+      if (isEmp) body.display_name = draftName.trim();
+      const r = profile?.user_id ? await api.updateUser(profile.user_id, body) : { ...profile, ...body };
+      setProfile({ user_id: r.user_id || profile?.user_id, name: r.display_name || r.name, avatar: r.avatar });
+      if (!isEmp) { try { const m = JSON.parse(localStorage.getItem('hf_maid') || '{}'); localStorage.setItem('hf_maid', JSON.stringify({ ...m, user_id: r.user_id || m.user_id, name: r.name, avatar: r.avatar })); } catch {} }
+      setEditing(false); showToast(en ? 'Saved ✓' : '已保存 ✓');
+    } catch { showToast(en ? 'Save failed' : '保存失败'); }
+  };
+  const user = { name: profile?.name || (isEmp ? '陈先生' : 'Siti'), avatar: profile?.avatar || (isEmp ? '👨🏻‍💼' : '👩🏽‍🦱'), role: t(isEmp ? 'employer' : 'maid') };
   const saveGst = async (pct) => {
     const p = +pct; if (isNaN(p) || p < 0 || p >= 100) return showToast(lang === 'en' ? 'Enter 0–99' : '请输入 0–99');
     setGstPct(p);
@@ -45,8 +75,32 @@ export default function Me({ role }) {
           <h1 style={{ fontSize: 20 }}>{user.name}</h1>
           <div className="sub">{user.role} · {family}</div>
         </div>
+        <button className="iconbtn" style={{ background: 'rgba(255,255,255,.22)', color: '#fff' }} onClick={openEdit} title={en ? 'Edit profile' : '编辑资料'}>✏️</button>
       </div>
       <div className="content">
+        {/* 编辑资料（姓名 + 头像） */}
+        {editing && (
+          <div className="card" style={{ borderLeft: '3px solid var(--teal)' }}>
+            <div className="bold small" style={{ marginBottom: 8 }}>✏️ {en ? 'Edit profile' : '编辑资料'}</div>
+            <div className="field" style={{ margin: 0 }}>
+              <label>{en ? 'Name' : '姓名'} {isEmp && <span className="tiny muted">（{en ? 'shown to helper' : '女佣端可见'}）</span>}</label>
+              <input className="input" value={draftName} onChange={(e) => setDraftName(e.target.value)} />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>{en ? 'Avatar' : '头像'}</label>
+              <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+                {AVATARS.map((a) => (
+                  <button key={a} className={'chip' + (draftAvatar === a ? ' on' : '')} style={{ fontSize: 20 }} onClick={() => setDraftAvatar(a)}>{a}</button>
+                ))}
+              </div>
+            </div>
+            <div className="btn-row" style={{ marginTop: 12 }}>
+              <button className="btn outline" onClick={() => setEditing(false)}>{t('cancel')}</button>
+              <button className="btn primary" style={{ flex: 2 }} onClick={saveProfile}>{t('save')}</button>
+            </div>
+          </div>
+        )}
+
         {/* 语言设置 */}
         <div className="section-title">🌐 {t('langSetting')}</div>
         <div className="card">

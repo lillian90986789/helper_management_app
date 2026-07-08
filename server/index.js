@@ -76,6 +76,16 @@ api.post('/join', (req, res) => {
   notify(family.family_id, 'system', '女佣加入家庭', `${name} 通过邀请码加入`, 'member', uid, 'employer');
   res.json({ user_id: uid, family_id: family.family_id, family_name: family.family_name, name: name.trim(), avatar });
 });
+// 更新用户资料（姓名 / 对女佣显示的称呼 / 头像）——雇主、女佣通用
+api.patch('/users/:id', (req, res) => {
+  const u = db.prepare('SELECT * FROM User WHERE user_id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  const b = req.body;
+  if (b.name !== undefined && !String(b.name).trim()) return res.status(400).json({ error: 'name_required' });
+  db.prepare("UPDATE User SET name=COALESCE(@name,name), display_name=COALESCE(@display_name,display_name), avatar=COALESCE(@avatar,avatar), updated_at=datetime('now') WHERE user_id=@id")
+    .run({ name: b.name !== undefined ? String(b.name).trim() : null, display_name: b.display_name ?? null, avatar: b.avatar ?? null, id: u.user_id });
+  res.json(db.prepare('SELECT user_id,name,display_name,avatar,role,preferred_language FROM User WHERE user_id=?').get(u.user_id));
+});
 api.post('/members/:id/remove', (req, res) => {
   // 成员离开家庭：失去数据访问（这里标记为 removed）
   db.prepare('UPDATE FamilyMember SET status=? WHERE family_member_id=?').run('removed', req.params.id);
