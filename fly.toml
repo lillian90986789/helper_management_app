@@ -1,0 +1,30 @@
+# Fly.io 部署配置 —— 详见 https://fly.io/docs/reference/configuration/
+# 部署前把 app 改成一个全局唯一的名字（会成为 https://<app>.fly.dev）
+
+app = "homeflow-gaoqinghong"
+primary_region = "hkg"          # 香港机房，离港澳台/大陆较近；也可 sin(新加坡)/nrt(东京)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  DATA_DIR = "/app/data"
+
+# 对外 HTTP 服务：Fly 自动配 TLS，强制 HTTPS
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"   # 空闲时休眠省钱；有请求自动唤醒（数据在卷里不丢）
+  auto_start_machines = true
+  min_machines_running = 0
+  # SQLite 是单写库，务必只跑 1 台机器（不要横向扩容）
+
+# 持久卷：SQLite 数据库 + 上传的头像/小票都在这里，容器重建不丢
+[[mounts]]
+  source = "homeflow_data"
+  destination = "/app/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

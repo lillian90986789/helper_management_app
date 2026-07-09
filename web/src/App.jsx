@@ -85,6 +85,27 @@ export default function App() {
 
   const switchRole = (r) => nav(r === 'employer' ? '/e/home' : '/m/today');
 
+  // 登录门禁：未登录必须先注册/登录（雇主）或用邀请码加入（女佣）才能使用
+  const authed = (r) => {
+    try { return !!JSON.parse(localStorage.getItem(r === 'maid' ? 'hf_maid' : 'hf_employer') || 'null')?.user_id; }
+    catch { return false; }
+  };
+  useEffect(() => {
+    const p = loc.pathname;
+    if (['/register', '/login', '/register-wizard', '/join'].includes(p)) return;   // 公共页
+    if (p === '/') {
+      if (authed('employer')) nav('/e/home', { replace: true });
+      else if (authed('maid')) nav('/m/today', { replace: true });
+      else nav('/login', { replace: true });
+      return;
+    }
+    let need = null;
+    if (p.startsWith('/m/')) need = 'maid';
+    else if (p.startsWith('/e/')) need = 'employer';
+    else need = role;                 // 共享详情页按当前粘性角色判定
+    if (need && !authed(need)) nav(need === 'maid' ? '/join' : '/login', { replace: true });
+  }, [loc.pathname, role]);
+
   return (
     <AppCtx.Provider value={{ showToast, role }}>
       <div className="stage">
@@ -108,7 +129,7 @@ export default function App() {
           </div>
           <div className="screen">
             <Routes>
-              <Route path="/" element={<Navigate to="/e/home" replace />} />
+              <Route path="/" element={null} />
               <Route path="/e/home" element={<EmployerHome />} />
               <Route path="/e/tasks" element={<TaskList role="employer" />} />
               <Route path="/e/recipes" element={<RecipeList />} />

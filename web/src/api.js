@@ -3,12 +3,28 @@ const base = '/api';
 export const currentMaidId = () => {
   try { return JSON.parse(localStorage.getItem('hf_maid') || 'null')?.user_id || 2; } catch { return 2; }
 };
+// 当前登录用户 id（按当前角色取对应身份），作为 X-User-Id 头，后端据此做家庭数据隔离
+const currentUserId = () => {
+  try {
+    const emp = JSON.parse(localStorage.getItem('hf_employer') || 'null');
+    const maid = JSON.parse(localStorage.getItem('hf_maid') || 'null');
+    const role = localStorage.getItem('hf_role');
+    if (role === 'maid') return maid?.user_id || emp?.user_id || '';
+    return emp?.user_id || maid?.user_id || '';
+  } catch { return ''; }
+};
 async function req(path, opts) {
+  const uid = currentUserId();
   const r = await fetch(base + path, {
-    headers: { 'Content-Type': 'application/json' },
     ...opts,
+    headers: { 'Content-Type': 'application/json', ...(uid ? { 'X-User-Id': String(uid) } : {}), ...(opts?.headers || {}) },
     body: opts?.body ? JSON.stringify(opts.body) : undefined,
   });
+  if (r.status === 401) {
+    // 未登录或身份失效：回到登录页（登录/注册/加入页本身不跳，避免循环）
+    const h = location.hash || '';
+    if (!/^#\/(login|register|join)/.test(h)) location.hash = '#/login';
+  }
   if (!r.ok) {
     let body = {};
     try { body = await r.json(); } catch {}

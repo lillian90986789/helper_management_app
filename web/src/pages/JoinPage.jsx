@@ -63,7 +63,7 @@ export default function JoinPage() {
         <div className="field">
           <label>{tt('邀请码', 'Invite code')} <span className="req">*</span></label>
           <input className="input" style={{ letterSpacing: 2, fontWeight: 700, textTransform: 'uppercase' }}
-            value={code} placeholder="HOME-8821" onChange={(e) => setCode(e.target.value)} />
+            value={code} placeholder="HOME-XXXX" onChange={(e) => setCode(e.target.value)} />
         </div>
         <div className="field">
           <label>{tt('你的姓名', 'Your name')} <span className="req">*</span></label>
@@ -77,7 +77,7 @@ export default function JoinPage() {
           </div>
         </div>
 
-        <div className="hint" style={{ marginTop: 8 }}>🔑 {tt('演示邀请码', 'Demo code')}：<b>HOME-8821</b></div>
+        <div className="hint" style={{ marginTop: 8 }}>🔑 {tt('邀请码由雇主在「女佣管理」页生成并提供给你', 'Ask your employer for the code from Helper Management')}</div>
       </div>
 
       <div className="actionbar">
