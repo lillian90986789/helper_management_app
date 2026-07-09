@@ -458,7 +458,7 @@ const dlog = (id, actor, action, from, to) => db.prepare(`INSERT INTO DailyTaskL
 api.get('/daily', (req, res) => {
   const date = req.query.date || todayYmd();
   ensureDailyTasks(date, famId(req));
-  const rows = db.prepare('SELECT * FROM DailyTask WHERE task_date=? AND family_id=? ORDER BY sort_order, daily_task_id').all(date, famId(req)).map(dailyWith);
+  const rows = db.prepare("SELECT * FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled' ORDER BY sort_order, daily_task_id").all(date, famId(req)).map(dailyWith);
   res.json({ date, tasks: rows });
 });
 api.get('/daily/:id', (req, res) => {
@@ -514,7 +514,7 @@ api.get('/week', (req, res) => {
     const d = new Date(mon); d.setDate(mon.getDate() + i);
     const ds = ymd(d);
     ensureDailyTasks(ds, famId(req));
-    const tasks = db.prepare('SELECT status FROM DailyTask WHERE task_date=? AND family_id=?').all(ds, famId(req));
+    const tasks = db.prepare("SELECT status FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled'").all(ds, famId(req));
     const done = tasks.filter((t) => t.status === 'done').length;
     const incomplete = tasks.filter((t) => t.status === 'incomplete').length;
     const pending_review = tasks.filter((t) => t.status === 'pending_review').length;
@@ -545,7 +545,7 @@ api.get('/month', (req, res) => {
     const ds = ymd(dObj);
     ensureDailyTasks(ds, famId(req));
     // 按当前女佣过滤（女佣日历只看自己的任务；雇主设休息日时看该女佣的任务量）
-    const tasks = db.prepare('SELECT status FROM DailyTask WHERE task_date=? AND assignee_id=? AND family_id=?').all(ds, helperId, famId(req));
+    const tasks = db.prepare("SELECT status FROM DailyTask WHERE task_date=? AND assignee_id=? AND family_id=? AND status != 'canceled'").all(ds, helperId, famId(req));
     const done = tasks.filter((t) => t.status === 'done').length;
     const incomplete = tasks.filter((t) => t.status === 'incomplete').length;
     const pending_review = tasks.filter((t) => t.status === 'pending_review').length;
@@ -653,7 +653,7 @@ api.get('/stats/week', (req, res) => {
   for (let i = 0; i < 7; i++) {
     const d = new Date(mon); d.setDate(mon.getDate() + i);
     const ds = ymd(d); ensureDailyTasks(ds, famId(req));
-    const ts = db.prepare('SELECT status FROM DailyTask WHERE task_date=? AND family_id=?').all(ds, famId(req));
+    const ts = db.prepare("SELECT status FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled'").all(ds, famId(req));
     const dn = ts.filter((t) => t.status === 'done').length;
     total += ts.length; done += dn;
     rows.push({ date: ds, weekday: i + 1, total: ts.length, done: dn, undone: ts.length - dn });
@@ -758,7 +758,7 @@ function wdName(n) { return ['', '周一', '周二', '周三', '周四', '周五
 api.get('/dashboard/employer', (req, res) => {
   const date = todayYmd();
   ensureDailyTasks(date, famId(req));
-  const tasks = db.prepare('SELECT status FROM DailyTask WHERE task_date=? AND family_id=?').all(date, famId(req));
+  const tasks = db.prepare("SELECT status FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled'").all(date, famId(req));
   const cnt = (s) => tasks.filter((t) => t.status === s).length;
   const summary = { total: tasks.length, done: cnt('done'), in_progress: cnt('in_progress'),
     incomplete: cnt('incomplete'), pending_review: cnt('pending_review'), todo: cnt('today_todo') };
@@ -781,7 +781,7 @@ api.get('/dashboard/maid', (req, res) => {
   const helperId = req.query.helper_id ? +req.query.helper_id : defaultHelperId(famId(req));
   const todayRest = !!activeRestDay(date, helperId);
   ensureDailyTasks(date, famId(req));
-  const tasks = db.prepare('SELECT * FROM DailyTask WHERE task_date=? AND assignee_id=? AND family_id=? ORDER BY sort_order, daily_task_id').all(date, helperId, famId(req)).map(dailyWith);
+  const tasks = db.prepare("SELECT * FROM DailyTask WHERE task_date=? AND assignee_id=? AND family_id=? AND status != 'canceled' ORDER BY sort_order, daily_task_id").all(date, helperId, famId(req)).map(dailyWith);
   const done = tasks.filter(t=>['done','skipped'].includes(t.status)).length;
   const next = tasks.find(t=>['today_todo','in_progress','returned'].includes(t.status));
   const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image, r.recipe_type FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE assignee_id=? AND mo.family_id=?').all(helperId, famId(req));
