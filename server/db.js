@@ -389,6 +389,7 @@ addCol('User', 'password_hash', 'TEXT');
 addCol('User', 'login_method', "TEXT DEFAULT 'phone'");   // phone|email|apple|google
 addCol('User', 'display_name', 'TEXT');                    // 对女佣显示的称呼
 addCol('User', 'gender', 'TEXT');
+addCol('User', 'birth_date', 'TEXT');                      // 出生年月日 YYYY-MM-DD（用于自动显示年龄）
 addCol('User', 'notification_language', 'TEXT');
 addCol('User', 'country', 'TEXT');
 addCol('User', 'timezone', 'TEXT');

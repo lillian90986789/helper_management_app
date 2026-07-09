@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, PriorityBadge, fmtTime } from '../ui.jsx';
+import { TopBar, StatusBadge, PriorityBadge, fmtTime, Avatar } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function TaskDetail() {
@@ -40,7 +40,7 @@ export default function TaskDetail() {
             <span className="badge gray">⏳ {task.estimated_duration}{t('min')}</span>
             {task.require_photo ? <span className="badge gray">📷 {lang==='en'?'Photo':'需照片'}</span> : null}
             {task.require_approval ? <span className="badge gray">⚖️ {lang==='en'?'Review':'需审核'}</span> : null}
-            {task.assignee && <span className="badge gray">{task.assignee.avatar} {task.assignee.name}</span>}
+            {task.assignee && <span className="badge gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Avatar value={task.assignee.avatar} size={16} style={{ background: 'transparent' }} /> {task.assignee.name}</span>}
           </div>
         </div>
 

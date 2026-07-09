@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n } from '../i18n.jsx';
-import { TopBar, Empty } from '../ui.jsx';
+import { TopBar, Empty, Avatar, AvatarPicker, ageFromBirth } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 const roleBadge = { employer: 'teal', maid: 'purple', member: 'blue' };
+const AVATAR_EMOJIS = ['👩🏽‍🦱','👩🏻‍🦰','👱🏽‍♀️','🧑🏽','👨🏻','👩🏻','👵🏻','👴🏻','🧒🏻','👶🏻'];
+const blankForm = () => ({ name: '', role: 'maid', preferred_language: 'en', avatar: '👩🏽‍🦱', gender: '', birth_date: '' });
 
 export default function Members() {
   const { t, lang } = useI18n();
@@ -14,10 +16,12 @@ export default function Members() {
   const { showToast } = useApp();
   const { data, reload } = useAsync(() => api.members());
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: '', role: 'maid', preferred_language: 'en' });
+  const [form, setForm] = useState(blankForm);
+  const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   if (!data) return <><TopBar title={t('memberMgmt')} /><div className="empty">加载中…</div></>;
   const active = data.members.filter((m) => m.status !== 'removed');
+  const genderIcon = (g) => g === 'male' ? '♂️' : g === 'female' ? '♀️' : '';
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(data.invite_code); } catch {}
@@ -28,7 +32,7 @@ export default function Members() {
     if (!form.name.trim()) return showToast(lang === 'en' ? 'Enter a name' : '请填写姓名');
     await api.addMember(form);
     showToast(t('addMaid') + ' ✓');
-    setForm({ name: '', role: 'maid', preferred_language: 'en' });
+    setForm(blankForm());
     setAdding(false);
     reload();
   };
@@ -63,10 +67,10 @@ export default function Members() {
         <div className="card">
           {active.length === 0 ? <Empty text={t('noData')} /> : active.map((m) => (
             <div key={m.family_member_id} className="list-item">
-              <div className="avatar" style={{ width: 44, height: 44, fontSize: 24 }}>{m.avatar}</div>
+              <Avatar value={m.avatar} size={44} />
               <div className="grow">
-                <div className="bold">{m.name} {m.role === 'employer' && <span className="tiny muted">👑</span>}</div>
-                <div className="tiny muted">{m.preferred_language === 'en' ? 'English' : '简体中文'} · {t('active')}</div>
+                <div className="bold">{m.name} {genderIcon(m.gender)} {m.role === 'employer' && <span className="tiny muted">👑</span>}</div>
+                <div className="tiny muted">{m.birth_date ? ageFromBirth(m.birth_date, lang) + ' · ' : ''}{m.preferred_language === 'en' ? 'English' : '简体中文'} · {t('active')}</div>
               </div>
               <span className={'badge ' + (roleBadge[m.role] || 'gray')}>{t(m.role)}</span>
               {m.role === 'maid' &&
@@ -85,28 +89,48 @@ export default function Members() {
       {adding && (
         <div onClick={() => setAdding(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 60, display: 'flex', alignItems: 'flex-end' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '22px 22px 0 0', width: '100%', padding: 20, paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
-            <div className="spread"><span className="bold" style={{ fontSize: 17 }}>{t('addMaid')}</span><button className="iconbtn" onClick={() => setAdding(false)}>✕</button></div>
-            <div className="field mt12">
-              <label>{t('memberName')} <span className="req">*</span></label>
-              <input className="input" value={form.name} placeholder={lang === 'en' ? 'Helper name' : '女佣姓名'} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
-            </div>
-            <div className="field">
-              <label>{t('memberRole')}</label>
-              <div className="seg">
-                {[['maid', t('maid')], ['member', t('member')]].map(([k, lbl]) => (
-                  <button key={k} className={'opt' + (form.role === k ? ' on' : '')} onClick={() => setForm((p) => ({ ...p, role: k }))}>{lbl}</button>
-                ))}
+            <div className="spread"><span className="bold" style={{ fontSize: 17 }}>{form.role === 'member' ? t('addMember') : t('addMaid')}</span><button className="iconbtn" onClick={() => setAdding(false)}>✕</button></div>
+            <div style={{ maxHeight: '70vh', overflowY: 'auto', marginTop: 12 }}>
+              <div className="field">
+                <label>{t('avatar')}</label>
+                <AvatarPicker value={form.avatar} onChange={(v) => setF('avatar', v)} emojis={AVATAR_EMOJIS} showToast={showToast} />
+              </div>
+              <div className="field">
+                <label>{t('memberName')} <span className="req">*</span></label>
+                <input className="input" value={form.name} placeholder={lang === 'en' ? 'Name' : '姓名'} onChange={(e) => setF('name', e.target.value)} />
+              </div>
+              <div className="field">
+                <label>{t('memberRole')}</label>
+                <div className="seg">
+                  {[['maid', t('maid')], ['member', t('member')]].map(([k, lbl]) => (
+                    <button key={k} className={'opt' + (form.role === k ? ' on' : '')} onClick={() => setF('role', k)}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="row" style={{ gap: 10 }}>
+                <div className="field grow">
+                  <label>{t('gender')}</label>
+                  <div className="seg">
+                    {[['', t('notSet')], ['male', t('male')], ['female', t('female')]].map(([k, lbl]) => (
+                      <button key={k || 'na'} className={'opt' + (form.gender === k ? ' on' : '')} onClick={() => setF('gender', k)}>{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="field">
+                <label>{t('birthDate')} {form.birth_date && <span className="tiny muted">· {t('age')} {ageFromBirth(form.birth_date, lang)}</span>}</label>
+                <input className="input" type="date" value={form.birth_date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setF('birth_date', e.target.value)} />
+              </div>
+              <div className="field">
+                <label>{t('memberLang')}</label>
+                <div className="seg">
+                  {[['en', 'English'], ['zh', '简体中文']].map(([k, lbl]) => (
+                    <button key={k} className={'opt' + (form.preferred_language === k ? ' on' : '')} onClick={() => setF('preferred_language', k)}>{lbl}</button>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="field">
-              <label>{t('memberLang')}</label>
-              <div className="seg">
-                {[['en', 'English'], ['zh', '简体中文']].map(([k, lbl]) => (
-                  <button key={k} className={'opt' + (form.preferred_language === k ? ' on' : '')} onClick={() => setForm((p) => ({ ...p, preferred_language: k }))}>{lbl}</button>
-                ))}
-              </div>
-            </div>
-            <button className="btn primary block" onClick={submit}>{t('addDirectly')}</button>
+            <button className="btn primary block mt12" onClick={submit}>{t('addDirectly')}</button>
           </div>
         </div>
       )}

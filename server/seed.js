@@ -24,11 +24,15 @@ const familyId = fam.lastInsertRowid;
 // ---- 用户 ----
 const employer = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('户主', '👨🏻‍💼', 'employer', 'zh').lastInsertRowid;
 const maid = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('Siti', '👩🏽‍🦱', 'maid', 'en').lastInsertRowid;
-const member = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('家人', '👩🏻', 'member', 'zh').lastInsertRowid;
+const member = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language, gender, birth_date) VALUES (?,?,?,?,?,?)`).run('家人', '👩🏻', 'member', 'zh', 'female', '1990-05-20').lastInsertRowid;
+// 宝宝（用于演示按出生年月自动显示月龄）
+const babyBirth = new Date(today); babyBirth.setMonth(babyBirth.getMonth() - 8);
+const baby = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language, gender, birth_date) VALUES (?,?,?,?,?,?)`).run('宝宝', '👶🏻', 'member', 'zh', 'male', iso(babyBirth)).lastInsertRowid;
 
 db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role) VALUES (?,?,?)`).run(familyId, employer, 'employer');
 db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role) VALUES (?,?,?)`).run(familyId, maid, 'maid');
 db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role) VALUES (?,?,?)`).run(familyId, member, 'member');
+db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role) VALUES (?,?,?)`).run(familyId, baby, 'member');
 
 // ---- 区域 ----
 const areas = [

@@ -1,5 +1,55 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from './i18n.jsx';
+import { api } from './api.js';
+
+// 头像值是否为图片 URL（上传的本地图片 / data / http），否则视为 emoji
+export const isImgAvatar = (v) => typeof v === 'string' && (v.startsWith('/uploads') || v.startsWith('data:') || v.startsWith('http'));
+
+// 通用头像：URL 渲染成圆形图片，emoji 渲染成居中字符
+export function Avatar({ value, size = 44, style }) {
+  const s = { width: size, height: size, borderRadius: '50%', flex: 'none', ...style };
+  if (isImgAvatar(value)) return <img src={value} alt="" style={{ ...s, objectFit: 'cover' }} />;
+  return <span style={{ ...s, display: 'grid', placeItems: 'center', fontSize: Math.round(size * 0.52), background: 'var(--teal-l)' }}>{value || '👤'}</span>;
+}
+
+// 头像选择：一组 emoji + 「上传本地图片」
+export function AvatarPicker({ value, onChange, emojis, showToast }) {
+  const { lang } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const onFile = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setBusy(true);
+    try {
+      const dataUrl = await new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = err; fr.readAsDataURL(file); });
+      const r = await api.uploadAvatar({ image_base64: dataUrl, media_type: file.type });
+      onChange(r.url);
+    } catch { showToast?.(lang === 'en' ? 'Upload failed' : '上传失败'); }
+    setBusy(false); e.target.value = '';
+  };
+  return (
+    <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible', alignItems: 'center', gap: 8 }}>
+      {isImgAvatar(value) && <img src={value} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', outline: '2.5px solid var(--teal)' }} />}
+      {emojis.map((e) => <button key={e} className={'chip' + (value === e ? ' on' : '')} style={{ fontSize: 20 }} onClick={() => onChange(e)}>{e}</button>)}
+      <label className="btn sm outline" style={{ cursor: 'pointer', flex: 'none' }}>
+        {busy ? '⏳' : '📷 ' + (lang === 'en' ? 'Upload' : '上传图片')}
+        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={onFile} disabled={busy} />
+      </label>
+    </div>
+  );
+}
+
+// 根据出生年月日自动算年龄（<2 岁显示月龄）
+export function ageFromBirth(birth, lang) {
+  if (!birth) return '';
+  const b = new Date(birth); if (isNaN(b.getTime())) return '';
+  const now = new Date();
+  let months = (now.getFullYear() - b.getFullYear()) * 12 + (now.getMonth() - b.getMonth());
+  if (now.getDate() < b.getDate()) months--;
+  if (months < 0) return '';
+  if (months < 24) return lang === 'en' ? `${months} mo` : `${months}个月`;
+  return lang === 'en' ? `${Math.floor(months / 12)} yr` : `${Math.floor(months / 12)}岁`;
+}
 
 // 状态 → 徽章配色
 const statusColor = {

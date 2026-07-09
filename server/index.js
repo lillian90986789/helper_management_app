@@ -76,7 +76,7 @@ api.get('/members', (req, res) => {
   const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
   const rows = db.prepare(`
     SELECT fm.family_member_id, fm.role, fm.status, fm.join_date,
-           u.user_id, u.name, u.avatar, u.phone, u.email, u.preferred_language, u.account_status
+           u.user_id, u.name, u.avatar, u.phone, u.email, u.preferred_language, u.account_status, u.gender, u.birth_date
     FROM FamilyMember fm JOIN User u ON u.user_id = fm.user_id
     WHERE fm.family_id = ? ORDER BY fm.family_member_id`).all(family.family_id);
   res.json({ invite_code: family.invite_code, family_name: family.family_name, members: rows });
@@ -84,12 +84,12 @@ api.get('/members', (req, res) => {
 // 雇主直接添加成员/女佣账号
 api.post('/members', (req, res) => {
   const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
-  const { name, role = 'maid', preferred_language = 'zh', phone = '', email = '' } = req.body;
+  const { name, role = 'maid', preferred_language = 'zh', phone = '', email = '', gender = '', birth_date = '' } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   const pool = AVATARS[role] || AVATARS.maid;
-  const avatar = pool[Math.floor(Math.random() * pool.length)];
-  const uid = db.prepare(`INSERT INTO User (name, avatar, phone, email, role, preferred_language, account_status) VALUES (?,?,?,?,?,?,?)`)
-    .run(name.trim(), avatar, phone, email, role, preferred_language, 'active').lastInsertRowid;
+  const avatar = req.body.avatar || pool[Math.floor(Math.random() * pool.length)];   // emoji 或上传图片 URL
+  const uid = db.prepare(`INSERT INTO User (name, avatar, phone, email, role, preferred_language, gender, birth_date, account_status) VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(name.trim(), avatar, phone, email, role, preferred_language, gender || null, birth_date || null, 'active').lastInsertRowid;
   db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role, status) VALUES (?,?,?,?)`).run(family.family_id, uid, role, 'active');
   notify(family.family_id, 'system', '新成员加入', `${name} 已加入家庭`, 'member', uid, 'employer');
   res.json({ user_id: uid, name: name.trim(), avatar, role });
@@ -115,15 +115,29 @@ api.post('/join', (req, res) => {
   notify(family.family_id, 'system', '女佣加入家庭', `${name} 通过邀请码加入`, 'member', uid, 'employer');
   res.json({ user_id: uid, family_id: family.family_id, family_name: family.family_name, name: name.trim(), avatar });
 });
-// 更新用户资料（姓名 / 对女佣显示的称呼 / 头像）——雇主、女佣通用
+// 更新用户资料（姓名 / 称呼 / 头像 / 性别 / 出生日期）——雇主、女佣、家庭成员通用
 api.patch('/users/:id', (req, res) => {
   const u = db.prepare('SELECT * FROM User WHERE user_id=?').get(req.params.id);
   if (!u) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   if (b.name !== undefined && !String(b.name).trim()) return res.status(400).json({ error: 'name_required' });
-  db.prepare("UPDATE User SET name=COALESCE(@name,name), display_name=COALESCE(@display_name,display_name), avatar=COALESCE(@avatar,avatar), updated_at=datetime('now') WHERE user_id=@id")
-    .run({ name: b.name !== undefined ? String(b.name).trim() : null, display_name: b.display_name ?? null, avatar: b.avatar ?? null, id: u.user_id });
-  res.json(db.prepare('SELECT user_id,name,display_name,avatar,role,preferred_language FROM User WHERE user_id=?').get(u.user_id));
+  db.prepare(`UPDATE User SET name=COALESCE(@name,name), display_name=COALESCE(@display_name,display_name), avatar=COALESCE(@avatar,avatar),
+      gender=COALESCE(@gender,gender), birth_date=COALESCE(@birth_date,birth_date), updated_at=datetime('now') WHERE user_id=@id`)
+    .run({ name: b.name !== undefined ? String(b.name).trim() : null, display_name: b.display_name ?? null, avatar: b.avatar ?? null,
+      gender: b.gender ?? null, birth_date: b.birth_date ?? null, id: u.user_id });
+  res.json(db.prepare('SELECT user_id,name,display_name,avatar,role,preferred_language,gender,birth_date FROM User WHERE user_id=?').get(u.user_id));
+});
+// 上传本地图片作头像（返回可访问 URL）
+api.post('/upload-avatar', (req, res) => {
+  const b = req.body;
+  const base64 = (b.image_base64 || '').replace(/^data:[^;]+;base64,/, '');
+  if (!base64) return res.status(400).json({ error: 'image_required' });
+  const mediaType = b.media_type || 'image/png';
+  const ext = (mediaType.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  const fname = `avatar_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
+  try { fs.writeFileSync(join(uploadsDir, fname), Buffer.from(base64, 'base64')); }
+  catch (e) { return res.status(500).json({ error: 'save_failed' }); }
+  res.json({ url: `/uploads/${fname}` });
 });
 api.post('/members/:id/remove', (req, res) => {
   // 成员离开家庭：失去数据访问（这里标记为 removed）

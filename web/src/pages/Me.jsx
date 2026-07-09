@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n.jsx';
 import { api } from '../api.js';
+import { Avatar, AvatarPicker } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function Me({ role }) {
@@ -84,7 +85,7 @@ export default function Me({ role }) {
   return (
     <>
       <div className="topbar teal" style={{ paddingTop: 18, paddingBottom: 22 }}>
-        <div className="avatar" style={{ width: 54, height: 54, fontSize: 30, background: 'rgba(255,255,255,.25)' }}>{user.avatar}</div>
+        <Avatar value={user.avatar} size={54} style={{ background: 'rgba(255,255,255,.25)' }} />
         <div className="grow">
           <h1 style={{ fontSize: 20 }}>{user.name}</h1>
           <div className="sub">{user.role} · {family}</div>
@@ -108,11 +109,7 @@ export default function Me({ role }) {
             )}
             <div className="field" style={{ marginBottom: 0 }}>
               <label>{en ? 'Avatar' : '头像'}</label>
-              <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
-                {AVATARS.map((a) => (
-                  <button key={a} className={'chip' + (draftAvatar === a ? ' on' : '')} style={{ fontSize: 20 }} onClick={() => setDraftAvatar(a)}>{a}</button>
-                ))}
-              </div>
+              <AvatarPicker value={draftAvatar} onChange={setDraftAvatar} emojis={AVATARS} showToast={showToast} />
             </div>
             <div className="btn-row" style={{ marginTop: 12 }}>
               <button className="btn outline" onClick={() => setEditing(false)}>{t('cancel')}</button>

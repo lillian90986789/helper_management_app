@@ -88,6 +88,7 @@ const dict = {
     // members / invite
     memberMgmt: '成员管理', maidMgmt: '女佣管理', inviteCode: '邀请码', inviteHint: '把邀请码发给女佣，她注册时输入即可加入家庭', regenCode: '重新生成', copyCode: '复制', copied: '已复制',
     addMaid: '添加女佣', addMember: '添加成员', addDirectly: '直接添加', viaInvite: '邀请码加入', memberName: '姓名', memberLang: '默认语言', memberRole: '角色',
+    avatar: '头像', gender: '性别', male: '男', female: '女', notSet: '不填', birthDate: '出生日期', age: '年龄', uploadPhotoBtn: '上传图片',
     removeMember: '移出家庭', removeConfirm: '移出后该成员将立即失去家庭数据访问权限', joined: '已加入', removed: '已移出', active: '在职',
     // misc
     min: '分钟', confirm: '确认', cancel: '取消', save: '保存', submit: '提交', back: '返回', all: '全部',
@@ -167,6 +168,7 @@ const dict = {
     familyInfo: 'Family Info', members: 'Members', langSetting: 'Language', notifySetting: 'Notifications', logout: 'Log Out', myProfile: 'Profile', workSchedule: 'Schedule', purchaseHistory: 'Purchases',
     memberMgmt: 'Members', maidMgmt: 'Helper Management', inviteCode: 'Invite Code', inviteHint: 'Share this code with your helper to join the family at sign-up', regenCode: 'Regenerate', copyCode: 'Copy', copied: 'Copied',
     addMaid: 'Add Helper', addMember: 'Add Member', addDirectly: 'Add Directly', viaInvite: 'Via Invite Code', memberName: 'Name', memberLang: 'Language', memberRole: 'Role',
+    avatar: 'Avatar', gender: 'Gender', male: 'Male', female: 'Female', notSet: 'N/A', birthDate: 'Date of birth', age: 'Age', uploadPhotoBtn: 'Upload',
     removeMember: 'Remove', removeConfirm: 'They will immediately lose access to family data', joined: 'Joined', removed: 'Removed', active: 'Active',
     min: 'min', confirm: 'Confirm', cancel: 'Cancel', save: 'Save', submit: 'Submit', back: 'Back', all: 'All',
     autoTranslated: 'Auto-translated',

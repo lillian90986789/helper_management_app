@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n } from '../i18n.jsx';
-import { TopBar } from '../ui.jsx';
+import { TopBar, Avatar } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function ShoppingListNew() {
@@ -46,7 +46,7 @@ export default function ShoppingListNew() {
           <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
             {maids.length === 0 ? <span className="tiny muted">{lang === 'en' ? 'No helper yet — invite one first' : '还没有女佣，请先邀请'}</span> :
               maids.map((u) => (
-                <button key={u.user_id} className={'chip' + (f.assignee_id === u.user_id ? ' on' : '')} onClick={() => set('assignee_id', u.user_id)}>{u.avatar} {u.name}</button>
+                <button key={u.user_id} className={'chip' + (f.assignee_id === u.user_id ? ' on' : '')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => set('assignee_id', u.user_id)}><Avatar value={u.avatar} size={18} style={{ background: 'transparent' }} /> {u.name}</button>
               ))}
           </div>
         </div>

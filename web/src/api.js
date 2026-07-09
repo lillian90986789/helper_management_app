@@ -23,6 +23,7 @@ export const api = {
   members: () => req('/members'),
   addMember: (body) => req('/members', { method: 'POST', body }),
   updateUser: (id, body) => req(`/users/${id}`, { method: 'PATCH', body }),
+  uploadAvatar: (body) => req('/upload-avatar', { method: 'POST', body }),
   removeMember: (id) => req(`/members/${id}/remove`, { method: 'POST' }),
   regenInvite: () => req('/family/invite-code', { method: 'POST' }),
   join: (body) => req('/join', { method: 'POST', body }),

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, WeekdayPicker } from '../ui.jsx';
+import { TopBar, WeekdayPicker, Avatar } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function TaskNew() {
@@ -96,8 +96,8 @@ export default function TaskNew() {
           <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
             {assignees.length === 0 ? <span className="tiny muted">{lang === 'en' ? 'No helper yet — invite one first' : '还没有女佣，请先邀请'}</span> :
               assignees.map((u) => (
-                <button key={u.user_id} className={'chip' + (f.assignee_id === u.user_id ? ' on' : '')} onClick={() => set('assignee_id', u.user_id)}>
-                  {u.avatar} {u.name}{u.role === 'member' ? '·' + t('member') : ''}
+                <button key={u.user_id} className={'chip' + (f.assignee_id === u.user_id ? ' on' : '')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => set('assignee_id', u.user_id)}>
+                  <Avatar value={u.avatar} size={18} style={{ background: 'transparent' }} /> {u.name}{u.role === 'member' ? '·' + t('member') : ''}
                 </button>
               ))}
           </div>
