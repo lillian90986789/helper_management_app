@@ -18,13 +18,13 @@ const todayStr = iso(today);
 
 // ---- 家庭 ----
 const fam = db.prepare(`INSERT INTO Family (family_name, country, timezone, address, default_language, invite_code, creator_user_id) VALUES (?,?,?,?,?,?,?)`)
-  .run('陈先生家 · Chen Family', '新加坡', 'Asia/Singapore', 'Orchard Road 88', 'zh', 'HOME-8821', 1);
+  .run('我的家庭 · My Home', '新加坡', 'Asia/Singapore', 'Orchard Road 88', 'zh', 'HOME-8821', 1);
 const familyId = fam.lastInsertRowid;
 
 // ---- 用户 ----
-const employer = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('陈先生', '👨🏻‍💼', 'employer', 'zh').lastInsertRowid;
+const employer = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('户主', '👨🏻‍💼', 'employer', 'zh').lastInsertRowid;
 const maid = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('Siti', '👩🏽‍🦱', 'maid', 'en').lastInsertRowid;
-const member = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('陈太太', '👩🏻', 'member', 'zh').lastInsertRowid;
+const member = db.prepare(`INSERT INTO User (name, avatar, role, preferred_language) VALUES (?,?,?,?)`).run('家人', '👩🏻', 'member', 'zh').lastInsertRowid;
 
 db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role) VALUES (?,?,?)`).run(familyId, employer, 'employer');
 db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role) VALUES (?,?,?)`).run(familyId, maid, 'maid');
