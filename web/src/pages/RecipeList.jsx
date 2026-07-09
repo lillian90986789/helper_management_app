@@ -42,7 +42,9 @@ export default function RecipeList({ cooking }) {
   const list = (recipes || []).filter((r) => type === 'all' || r.recipe_type === type);
   return (
     <>
-      <div className="topbar"><h1>{t('recipes')}</h1><button className="iconbtn">🔍</button></div>
+      <div className="topbar"><h1>{t('recipes')}</h1>
+        <button className="iconbtn" onClick={() => nav('/recipe-new')} title={lang === 'en' ? 'New recipe' : '新建菜谱'}>＋</button>
+      </div>
       <div style={{ position: 'sticky', top: 61, background: 'var(--bg)', zIndex: 20, padding: '10px 16px 6px' }}>
         <div className="chips">
           {[['all', t('all')], ['adult', t('adult')], ['baby', t('baby')]].map(([k, label]) => (

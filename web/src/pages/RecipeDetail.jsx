@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
@@ -8,12 +9,27 @@ import { useApp } from '../App.jsx';
 export default function RecipeDetail() {
   const { id } = useParams();
   const { t, lang } = useI18n();
+  const en = lang === 'en';
   const nav = useNavigate();
   const { role, showToast } = useApp();
   const { data: r, reload } = useAsync(() => api.recipe(id), [id]);
+  const [pickMeal, setPickMeal] = useState(false);
+  const [busy, setBusy] = useState(false);
   if (!r) return <><TopBar title={t('recipes')} /><div className="empty">加载中…</div></>;
 
   const fav = async () => { await api.favorite(r.recipe_id); reload(); };
+  // 真实：生成采购清单
+  const toShopping = async () => {
+    if (busy) return; setBusy(true);
+    try { const l = await api.recipeToShopping(r.recipe_id); showToast(en ? 'Added to shopping list ✓' : '已生成采购清单 ✓'); nav('/shopping-list/' + l.shopping_list_id); }
+    catch { showToast(en ? 'Failed' : '操作失败'); } setBusy(false);
+  };
+  // 真实：安排到今日菜单（选餐次）
+  const toMeal = async (meal_type) => {
+    if (busy) return; setBusy(true);
+    try { await api.recipeToMeal(r.recipe_id, { meal_type }); setPickMeal(false); showToast(en ? 'Added to menu ✓' : '已安排到今日菜单 ✓'); nav('/e/home'); }
+    catch { showToast(en ? 'Failed' : '操作失败'); } setBusy(false);
+  };
 
   return (
     <>
@@ -66,12 +82,30 @@ export default function RecipeDetail() {
       {role === 'maid'
         ? <div className="actionbar">
             <button className="btn outline" onClick={() => showToast(t('confirmRead') + ' ✓')}>{t('confirmRead')}</button>
-            <button className="btn primary" style={{ flex: 2 }} onClick={() => showToast(t('addToCart') + ' ✓')}>🛒 {t('ingredientsShort')}</button>
+            <button className="btn primary" style={{ flex: 2 }} disabled={busy} onClick={toShopping}>🛒 {t('addToCart')}</button>
           </div>
         : <div className="actionbar">
-            <button className="btn outline" onClick={() => showToast(t('addToCart') + ' ✓')}>🛒 {t('addToCart')}</button>
-            <button className="btn primary" style={{ flex: 2 }} onClick={() => showToast(t('arrangeToMenu') + ' ✓')}>📅 {t('arrangeToMenu')}</button>
+            <button className="btn outline" disabled={busy} onClick={toShopping}>🛒 {t('addToCart')}</button>
+            <button className="btn primary" style={{ flex: 2 }} disabled={busy} onClick={() => setPickMeal(true)}>📅 {t('arrangeToMenu')}</button>
           </div>}
+
+      {/* 安排到菜单：选餐次 */}
+      {pickMeal && (
+        <div className="sheet-mask" onClick={() => setPickMeal(false)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="bold">{t('arrangeToMenu')} · {t('mealType')}</div>
+            <div className="tiny muted" style={{ margin: '6px 0 12px' }}>{en ? 'Add to today’s menu' : '安排到今日菜单'}</div>
+            <div className="row" style={{ gap: 8 }}>
+              {[['breakfast','🌅'],['lunch','🍚'],['dinner','🌙']].map(([mt, ic]) => (
+                <button key={mt} className="btn outline" style={{ flex: 1, flexDirection: 'column', height: 'auto', padding: '14px 4px' }} disabled={busy} onClick={() => toMeal(mt)}>
+                  <div style={{ fontSize: 22 }}>{ic}</div>{t(mt)}
+                </button>
+              ))}
+            </div>
+            <button className="btn outline block" style={{ marginTop: 12 }} onClick={() => setPickMeal(false)}>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

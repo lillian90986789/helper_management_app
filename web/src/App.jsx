@@ -16,6 +16,7 @@ import EmployerAuth from './pages/EmployerAuth.jsx';
 import JoinPage from './pages/JoinPage.jsx';
 import RecipeList from './pages/RecipeList.jsx';
 import RecipeDetail from './pages/RecipeDetail.jsx';
+import RecipeNew from './pages/RecipeNew.jsx';
 import MealOrder from './pages/MealOrder.jsx';
 import ShoppingPage from './pages/ShoppingPage.jsx';
 import ShoppingListNew from './pages/ShoppingListNew.jsx';
@@ -128,6 +129,7 @@ export default function App() {
               <Route path="/rest-days" element={<RestDaySettings />} />
               <Route path="/task/:id" element={<TaskDetail />} />
               <Route path="/recipe/:id" element={<RecipeDetail />} />
+              <Route path="/recipe-new" element={<RecipeNew />} />
               <Route path="/meal/:id" element={<MealOrder />} />
               <Route path="/shopping-new" element={<ShoppingListNew />} />
               <Route path="/shopping-list/:id" element={<ShoppingPage detail />} />

@@ -775,6 +775,55 @@ api.post('/recipes/:id/favorite', (req, res) => {
   db.prepare('UPDATE Recipe SET favorite=? WHERE recipe_id=?').run(r.favorite?0:1, r.recipe_id);
   res.json({ favorite: r.favorite?0:1 });
 });
+// 新建菜谱（含食材 + 步骤）
+api.post('/recipes', (req, res) => {
+  const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
+  const b = req.body;
+  if (!b.name || !b.name.trim()) return res.status(400).json({ error: 'name_required' });
+  const id = db.prepare(`INSERT INTO Recipe (family_id,name,name_en,recipe_type,category,cover_image,servings,duration,difficulty,suitable_age,allergen_info,notes,status,creator_id)
+    VALUES (@family_id,@name,@name_en,@recipe_type,@category,@cover_image,@servings,@duration,@difficulty,@suitable_age,@allergen_info,@notes,'published',1)`)
+    .run({ family_id: family.family_id, name: b.name.trim(), name_en: b.name_en || '', recipe_type: b.recipe_type === 'baby' ? 'baby' : 'adult',
+      category: b.category || '家常菜', cover_image: b.cover_image || '🍲', servings: b.servings || 2, duration: b.duration || 30,
+      difficulty: ['easy','normal','hard'].includes(b.difficulty) ? b.difficulty : 'normal', suitable_age: b.suitable_age || '', allergen_info: b.allergen_info || '', notes: b.notes || '' }).lastInsertRowid;
+  (b.ingredients || []).filter((i) => i.name && i.name.trim()).forEach((i) => db.prepare(`INSERT INTO RecipeIngredient (recipe_id,name,name_en,quantity,unit,required,substitute) VALUES (?,?,?,?,?,?,?)`)
+    .run(id, i.name.trim(), i.name_en || '', i.quantity || '', i.unit || '', i.required === false ? 0 : 1, i.substitute || ''));
+  (b.steps || []).filter((s) => (s.instruction || '').trim()).forEach((s, idx) => db.prepare(`INSERT INTO RecipeStep (recipe_id,step_number,instruction,instruction_en,duration) VALUES (?,?,?,?,?)`)
+    .run(id, idx + 1, s.instruction.trim(), s.instruction_en || '', s.duration || 0));
+  res.json(recipeWith(db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(id)));
+});
+// 从菜谱一键生成采购清单（食材 → 采购项，含二级分类猜测）
+function guessFoodSub(name) {
+  const map = [['肉类',['肉','排骨','牛','猪','鸡','羊','鸭']],['海鲜',['鱼','虾','蟹','贝','鲈','鱿','蛤']],
+    ['蔬菜',['菜','菠','兰花','萝卜','土豆','番茄','葱','姜','蒜','茄','椒']],['水果',['苹果','香蕉','莓','橙','葡萄','梨','桃']],
+    ['蛋奶',['蛋','奶','酪']],['主食',['米','面','粉','馒头','包','薯']],['调味品',['盐','酱','醋','油','糖','豉','蚝']],['豆制品',['豆腐','豆干','腐竹','豆浆']]];
+  for (const [c, kw] of map) if (kw.some((k) => name.includes(k))) return c;
+  return '其他食材';
+}
+api.post('/recipes/:id/to-shopping', (req, res) => {
+  const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
+  const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  const ings = db.prepare('SELECT * FROM RecipeIngredient WHERE recipe_id=?').all(r.recipe_id);
+  const lid = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,status,creator_id) VALUES (?,?,?, 'to_buy', 1)`)
+    .run(family.family_id, (r.name.split(' ')[0] || r.name) + ' 采购', defaultHelperId()).lastInsertRowid;
+  ings.forEach((ing) => db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,estimated_price,allow_substitute,urgency,status,source_recipe_id)
+    VALUES (?,?,?, '食材','食材',?, '🛒', ?, ?, 0, 1, 'normal', 'to_buy', ?)`)
+    .run(lid, ing.name, ing.name_en || '', guessFoodSub(ing.name), parseFloat(ing.quantity) || 1, ing.unit || '份', r.recipe_id));
+  notify(family.family_id, 'shopping', '新采购清单', '从菜谱「' + r.name + '」生成 ' + ings.length + ' 项食材', 'shopping', lid, 'maid');
+  res.json(listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(lid)));
+});
+// 从菜谱一键安排到今日菜单
+api.post('/recipes/:id/to-meal', (req, res) => {
+  const family = db.prepare('SELECT * FROM Family LIMIT 1').get();
+  const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  const b = req.body;
+  const mt = ['breakfast','lunch','dinner'].includes(b.meal_type) ? b.meal_type : 'lunch';
+  const mid = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,assignee_id,status,notes) VALUES (?,?,?,?,?,?, 'to_receive', ?)`)
+    .run(family.family_id, r.recipe_id, todayYmd(), mt, b.servings || r.servings || 2, defaultHelperId(), b.notes || '').lastInsertRowid;
+  notify(family.family_id, 'meal', '新菜单安排', '「' + r.name + '」已安排到' + ({breakfast:'早餐',lunch:'午餐',dinner:'晚餐'}[mt]), 'meal', mid, 'maid');
+  res.json(db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(mid));
+});
 
 // ---- 菜谱订单 ----
 function mealWith(m) {
