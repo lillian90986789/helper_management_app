@@ -7,10 +7,15 @@ import { StatusBadge, fmtTime } from '../ui.jsx';
 export default function EmployerHome() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
-  const { data } = useAsync(() => api.dashEmployer());
+  const { data, reload } = useAsync(() => api.dashEmployer());
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
   const { summary, meals, shoppingSummary, notifications, activity, family } = data;
   const unread = notifications.filter((n) => !n.is_read).length;
+  const delMeal = async (e, m) => {
+    e.stopPropagation();
+    if (!window.confirm(lang === 'en' ? `Remove "${m.recipe_name}" from today's menu?` : `从今日菜单删除「${m.recipe_name}」？`)) return;
+    await api.deleteMeal(m.meal_order_id); reload();
+  };
 
   return (
     <>
@@ -46,16 +51,19 @@ export default function EmployerHome() {
         {/* 今日菜单卡片 */}
         <div className="section-title">🍽️ {t('todayMenu')}</div>
         <div className="card">
-          {meals.slice(0, 3).map((m) => (
+          {meals.slice(0, 4).map((m) => (
             <div key={m.meal_order_id} className="list-item" onClick={() => nav('/meal/' + m.meal_order_id)}>
               <div className="thumb">{m.cover_image}</div>
               <div className="grow">
-                <div className="bold">{pick(lang, m.recipe_name, m.recipe_name_en)}</div>
+                <div className="bold">{pick(lang, m.recipe_name, m.recipe_name_en)}
+                  {m.status === 'pending_review' && <span className="badge amber tiny" style={{ marginLeft: 6 }}>{t('pendingReview')}</span>}</div>
                 <div className="small muted">{t(m.meal_type)} · {m.servings}{lang==='en'?' ppl':'人'} · {fmtTime(m.start_time)}</div>
               </div>
               <StatusBadge status={m.status} />
+              <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={(e) => delMeal(e, m)} title={lang==='en'?'Remove':'删除'}>✕</button>
             </div>
           ))}
+          {meals.length === 0 && <div className="empty tiny" style={{ padding: '8px 0' }}>{lang==='en'?'No dishes today':'今日暂无菜品'}</div>}
           <button className="btn sm outline block mt12" onClick={() => nav('/e/recipes')}>{t('arrangeMenu')}</button>
         </div>
 

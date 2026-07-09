@@ -787,6 +787,13 @@ api.get('/meals/:id', (req, res) => {
   if (!m) return res.status(404).json({ error:'not found' });
   res.json(mealWith(m));
 });
+// 雇主删除今日菜单中的菜品
+api.delete('/meals/:id', (req, res) => {
+  const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'not found' });
+  db.prepare('DELETE FROM MealOrder WHERE meal_order_id=?').run(m.meal_order_id);
+  res.json({ ok: true });
+});
 api.post('/meals/:id/transition', (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
   const { to, result_image } = req.body;

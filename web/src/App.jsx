@@ -71,12 +71,13 @@ export default function App() {
   const [toast, setToast] = useState('');
   const showToast = useCallback((m) => { setToast(m); setTimeout(() => setToast(''), 1600); }, []);
 
-  // 角色「粘性」：在 /e 或 /m 下更新并记住，共享详情页（/shopping-list、/task 等无前缀路由）沿用上次角色
+  // 角色「粘性」：仅在 /m/ 或 /e/ 底部导航下更新并记住；共享详情页（/meal、/members、/task、/shopping-list 等）沿用上次角色
+  // 注意必须带斜杠判断——否则 /meal、/members 会被 startsWith('/m') 误判为女佣路由
   const [role, setRole] = useState(() => { try { return localStorage.getItem('hf_role') || 'employer'; } catch { return 'employer'; } });
   useEffect(() => {
     let r = null;
-    if (loc.pathname.startsWith('/m')) r = 'maid';
-    else if (loc.pathname.startsWith('/e')) r = 'employer';
+    if (loc.pathname.startsWith('/m/')) r = 'maid';
+    else if (loc.pathname.startsWith('/e/')) r = 'employer';
     if (r) { setRole(r); try { localStorage.setItem('hf_role', r); } catch {} }
   }, [loc.pathname]);
   const showTabs = /^\/(e|m)\//.test(loc.pathname);

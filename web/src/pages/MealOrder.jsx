@@ -14,10 +14,14 @@ export default function MealOrder() {
   if (!m) return <><TopBar title={t('mealOrder')} /><div className="empty">加载中…</div></>;
 
   const trans = async (to, msg, result_image) => { await api.mealTransition(m.meal_order_id, { to, result_image }); showToast(msg || '✓'); reload(); };
+  const delMeal = async () => {
+    if (!window.confirm(lang === 'en' ? 'Remove this dish from the menu?' : '从菜单删除这道菜？')) return;
+    await api.deleteMeal(m.meal_order_id); showToast(lang === 'en' ? 'Removed' : '已删除'); nav(-1);
+  };
 
   return (
     <>
-      <TopBar title={t('mealOrder')} />
+      <TopBar title={t('mealOrder')} right={role !== 'maid' ? <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={delMeal} title={lang === 'en' ? 'Remove dish' : '删除菜品'}>🗑️</button> : undefined} />
       <div className="content">
         <div className="card" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 56 }}>{m.recipe.cover_image}</div>

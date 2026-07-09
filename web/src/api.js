@@ -64,6 +64,7 @@ export const api = {
   meals: () => req('/meals'),
   meal: (id) => req('/meals/' + id),
   mealTransition: (id, body) => req(`/meals/${id}/transition`, { method: 'POST', body }),
+  deleteMeal: (id) => req(`/meals/${id}`, { method: 'DELETE' }),
   shoppingLists: () => req('/shopping'),
   shopping: (id) => req('/shopping/' + id),
   createList: (body) => req('/shopping', { method: 'POST', body }),

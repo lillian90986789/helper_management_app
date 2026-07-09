@@ -161,8 +161,8 @@ const rc3 = addRecipe(
 );
 
 // ---- 菜谱订单（今日菜单） ----
-const mo1 = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,start_time,due_time,assignee_id,status,notes) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-  .run(familyId, rc1, todayStr, 'lunch', 3, at(11,0), at(12,0), maid, 'ingredients_ready', '少放盐').lastInsertRowid;
+const mo1 = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,start_time,due_time,assignee_id,status,notes,result_image) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+  .run(familyId, rc1, todayStr, 'lunch', 3, at(11,0), at(12,0), maid, 'pending_review', '少放盐', '🍅').lastInsertRowid;
 const mo2 = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,start_time,due_time,assignee_id,status,notes) VALUES (?,?,?,?,?,?,?,?,?,?)`)
   .run(familyId, rc2, todayStr, 'dinner', 3, at(17,30), at(18,30), maid, 'ingredients_short', '鲈鱼要新鲜').lastInsertRowid;
 const mo3 = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,start_time,due_time,assignee_id,status,notes) VALUES (?,?,?,?,?,?,?,?,?,?)`)
