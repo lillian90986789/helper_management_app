@@ -2,7 +2,7 @@
 # 把下面的 your-domain.com 换成你自己的域名（需先把域名 A 记录指向服务器 IP）。
 # Caddy 会自动向 Let's Encrypt 申请并续期证书，你什么都不用管。
 
-your-domain.com {
+helpermanagement.xyz {
 	reverse_proxy homeflow:8080
 }
 
