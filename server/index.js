@@ -739,7 +739,8 @@ api.post('/templates/:id/:op', (req, res) => {
     ensureDailyTasks(todayYmd(), famId(req));
   } else if (op === 'delete') {
     db.prepare("UPDATE TaskTemplate SET status='deleted' WHERE task_template_id=?").run(tpl.task_template_id);
-    db.prepare("UPDATE DailyTask SET status='canceled' WHERE task_template_id=? AND task_date=? AND status='today_todo'").run(tpl.task_template_id, todayYmd());
+    // 删除该任务在日历上所有日期的实例（如"每周一"的全部周一），而不只是今天
+    db.prepare("UPDATE DailyTask SET status='canceled' WHERE task_template_id=?").run(tpl.task_template_id);
   } else if (op === 'duplicate') {
     const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order),0) m FROM TaskTemplate WHERE family_id=?').get(famId(req)).m;
     const nid = db.prepare(`INSERT INTO TaskTemplate
