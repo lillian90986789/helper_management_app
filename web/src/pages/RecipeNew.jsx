@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n } from '../i18n.jsx';
 import { TopBar, AvatarPicker } from '../ui.jsx';
@@ -11,6 +11,8 @@ export default function RecipeNew() {
   const { t, lang } = useI18n();
   const en = lang === 'en';
   const nav = useNavigate();
+  const { id } = useParams();          // 有 id = 编辑已有菜谱
+  const editing = !!id;
   const { showToast } = useApp();
   const [f, setF] = useState({ name: '', recipe_type: 'adult', cover_image: '🍲', category: en ? 'Home cooking' : '家常菜',
     servings: 3, duration: 30, difficulty: 'normal', suitable_age: '', notes: '' });
@@ -19,23 +21,36 @@ export default function RecipeNew() {
   const [steps, setSteps] = useState([{ instruction: '' }]);
   const [busy, setBusy] = useState(false);
 
+  // 编辑时回填
+  useEffect(() => {
+    if (!editing) return;
+    api.recipe(id).then((r) => {
+      setF({ name: r.name || '', recipe_type: r.recipe_type || 'adult', cover_image: r.cover_image || '🍲',
+        category: r.category || (en ? 'Home cooking' : '家常菜'), servings: r.servings || 3, duration: r.duration || 30,
+        difficulty: r.difficulty || 'normal', suitable_age: r.suitable_age || '', notes: r.notes || '' });
+      setIngs(r.ingredients?.length ? r.ingredients.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit })) : [{ name: '', quantity: '', unit: '' }]);
+      setSteps(r.steps?.length ? r.steps.map((s) => ({ instruction: s.instruction })) : [{ instruction: '' }]);
+    }).catch(() => showToast(en ? 'Load failed' : '加载失败'));
+  }, [id]);
+
   const save = async () => {
     if (!f.name.trim()) return showToast(en ? 'Enter recipe name' : '请填写菜谱名称');
     setBusy(true);
     try {
-      const r = await api.createRecipe({
+      const body = {
         ...f, servings: +f.servings || 1, duration: +f.duration || 0,
         ingredients: ings.filter((i) => i.name.trim()).map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, required: true })),
         steps: steps.filter((s) => s.instruction.trim()).map((s) => ({ instruction: s.instruction })),
-      });
-      showToast(en ? 'Recipe created ✓' : '菜谱已创建 ✓');
+      };
+      const r = editing ? await api.updateRecipe(id, body) : await api.createRecipe(body);
+      showToast(editing ? (en ? 'Saved ✓' : '已保存 ✓') : (en ? 'Recipe created ✓' : '菜谱已创建 ✓'));
       nav('/recipe/' + r.recipe_id, { replace: true });
-    } catch { showToast(en ? 'Failed' : '创建失败'); setBusy(false); }
+    } catch { showToast(en ? 'Failed' : (editing ? '保存失败' : '创建失败')); setBusy(false); }
   };
 
   return (
     <>
-      <TopBar title={en ? 'New Recipe' : '新建菜谱'} />
+      <TopBar title={editing ? (en ? 'Edit Recipe' : '编辑菜谱') : (en ? 'New Recipe' : '新建菜谱')} />
       <div className="content">
         <div className="field">
           <label>{en ? 'Cover' : '封面'} <span className="tiny muted">（{en ? 'pick an emoji or upload a photo' : '选表情或上传本地图片'}）</span></label>

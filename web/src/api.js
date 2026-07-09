@@ -79,6 +79,7 @@ export const api = {
   recipe: (id) => req('/recipes/' + id),
   favorite: (id) => req(`/recipes/${id}/favorite`, { method: 'POST' }),
   createRecipe: (body) => req('/recipes', { method: 'POST', body }),
+  updateRecipe: (id, body) => req(`/recipes/${id}`, { method: 'PATCH', body }),
   recipeToShopping: (id) => req(`/recipes/${id}/to-shopping`, { method: 'POST' }),
   recipeToMeal: (id, body) => req(`/recipes/${id}/to-meal`, { method: 'POST', body }),
   meals: () => req('/meals'),

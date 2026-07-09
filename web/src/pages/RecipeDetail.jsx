@@ -33,7 +33,10 @@ export default function RecipeDetail() {
 
   return (
     <>
-      <TopBar title={pick(lang, r.name, r.name_en)} right={<button className="iconbtn" onClick={fav}>{r.favorite ? '⭐' : '☆'}</button>} />
+      <TopBar title={pick(lang, r.name, r.name_en)} right={<div className="row" style={{ gap: 6 }}>
+        {role === 'employer' && <button className="iconbtn" onClick={() => nav('/recipe-edit/' + r.recipe_id)} title={en ? 'Edit' : '编辑'}>✏️</button>}
+        <button className="iconbtn" onClick={fav}>{r.favorite ? '⭐' : '☆'}</button>
+      </div>} />
       <div className="content">
         {/* 封面 */}
         <div className="card" style={{ textAlign: 'center', padding: '26px' }}>

@@ -151,6 +151,7 @@ export default function App() {
               <Route path="/task/:id" element={<TaskDetail />} />
               <Route path="/recipe/:id" element={<RecipeDetail />} />
               <Route path="/recipe-new" element={<RecipeNew />} />
+              <Route path="/recipe-edit/:id" element={<RecipeNew />} />
               <Route path="/meal/:id" element={<MealOrder />} />
               <Route path="/shopping-new" element={<ShoppingListNew />} />
               <Route path="/shopping-list/:id" element={<ShoppingPage detail />} />

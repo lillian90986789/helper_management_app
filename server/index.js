@@ -836,6 +836,36 @@ api.post('/recipes', (req, res) => {
     .run(id, idx + 1, s.instruction.trim(), s.instruction_en || '', s.duration || 0));
   res.json(recipeWith(db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(id)));
 });
+// 修改已有菜谱（覆盖字段 + 重建食材/步骤）
+api.patch('/recipes/:id', (req, res) => {
+  const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
+  if (!r || r.family_id !== famId(req)) return res.status(404).json({ error: 'not found' });
+  const b = req.body;
+  if (b.name !== undefined && !String(b.name).trim()) return res.status(400).json({ error: 'name_required' });
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE Recipe SET name=COALESCE(@name,name), name_en=COALESCE(@name_en,name_en), recipe_type=COALESCE(@recipe_type,recipe_type),
+        category=COALESCE(@category,category), cover_image=COALESCE(@cover_image,cover_image), servings=COALESCE(@servings,servings),
+        duration=COALESCE(@duration,duration), difficulty=COALESCE(@difficulty,difficulty), suitable_age=COALESCE(@suitable_age,suitable_age),
+        notes=COALESCE(@notes,notes) WHERE recipe_id=@id`)
+      .run({ name: b.name !== undefined ? String(b.name).trim() : null, name_en: b.name_en ?? null,
+        recipe_type: b.recipe_type ? (b.recipe_type === 'baby' ? 'baby' : 'adult') : null,
+        category: b.category ?? null, cover_image: b.cover_image ?? null, servings: b.servings ?? null, duration: b.duration ?? null,
+        difficulty: ['easy','normal','hard'].includes(b.difficulty) ? b.difficulty : null, suitable_age: b.suitable_age ?? null,
+        notes: b.notes ?? null, id: r.recipe_id });
+    if (b.ingredients) {
+      db.prepare('DELETE FROM RecipeIngredient WHERE recipe_id=?').run(r.recipe_id);
+      b.ingredients.filter((i) => i.name && i.name.trim()).forEach((i) => db.prepare(`INSERT INTO RecipeIngredient (recipe_id,name,name_en,quantity,unit,required,substitute) VALUES (?,?,?,?,?,?,?)`)
+        .run(r.recipe_id, i.name.trim(), i.name_en || '', i.quantity || '', i.unit || '', i.required === false ? 0 : 1, i.substitute || ''));
+    }
+    if (b.steps) {
+      db.prepare('DELETE FROM RecipeStep WHERE recipe_id=?').run(r.recipe_id);
+      b.steps.filter((s) => (s.instruction || '').trim()).forEach((s, idx) => db.prepare(`INSERT INTO RecipeStep (recipe_id,step_number,instruction,instruction_en,duration) VALUES (?,?,?,?,?)`)
+        .run(r.recipe_id, idx + 1, s.instruction.trim(), s.instruction_en || '', s.duration || 0));
+    }
+  });
+  try { tx(); } catch (e) { return res.status(500).json({ error: 'update_failed', detail: String(e.message || e) }); }
+  res.json(recipeWith(db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(r.recipe_id)));
+});
 // 从菜谱一键生成采购清单（食材 → 采购项，含二级分类猜测）
 function guessFoodSub(name) {
   const map = [['肉类',['肉','排骨','牛','猪','鸡','羊','鸭']],['海鲜',['鱼','虾','蟹','贝','鲈','鱿','蛤']],
