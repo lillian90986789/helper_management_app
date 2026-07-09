@@ -17,7 +17,7 @@ export default function TaskNew() {
 
   const [f, setF] = useState({
     task_name: '', task_name_en: '', description: '', area_id: null, assignee_id: 2, priority: 'normal',
-    estimated_duration: 30, weekdays: [1, 2, 3, 4, 5, 6, 7],
+    estimated_duration: 30, weekdays: [],
     require_photo: true, require_note: false, require_approval: true,
   });
   const [subtasks, setSubtasks] = useState([{ title: '' }]);
