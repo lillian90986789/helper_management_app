@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar } from '../ui.jsx';
+import { TopBar, CoverThumb } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function RecipeDetail() {
@@ -37,7 +37,7 @@ export default function RecipeDetail() {
       <div className="content">
         {/* 封面 */}
         <div className="card" style={{ textAlign: 'center', padding: '26px' }}>
-          <div style={{ fontSize: 70 }}>{r.cover_image}</div>
+          <div style={{ fontSize: 70 }}><CoverThumb value={r.cover_image} imgStyle={{ width: 96, height: 96, borderRadius: 18 }} /></div>
           <div className="bold mt8" style={{ fontSize: 20 }}>{pick(lang, r.name, r.name_en)}</div>
           <div className="row mt12" style={{ justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className={'badge ' + (r.recipe_type === 'baby' ? 'purple' : 'teal')}>{r.recipe_type === 'baby' ? t('baby') : t('adult')}</span>

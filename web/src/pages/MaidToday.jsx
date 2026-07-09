@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, currentMaidId } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { StatusBadge, PriorityBadge, fmtTime } from '../ui.jsx';
+import { StatusBadge, PriorityBadge, fmtTime, CoverThumb } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function MaidToday() {
@@ -118,7 +118,7 @@ export default function MaidToday() {
         <div className="card">
           {meals.map((m) => (
             <div key={m.meal_order_id} className="list-item" onClick={() => nav('/meal/' + m.meal_order_id)}>
-              <div className="thumb">{m.cover_image}</div>
+              <div className="thumb"><CoverThumb value={m.cover_image} /></div>
               <div className="grow">
                 <div className="bold">{pick(lang, m.recipe_name, m.recipe_name_en)} {m.recipe_type === 'baby' && <span className="badge purple tiny">{t('baby')}</span>}</div>
                 <div className="tiny muted">{t(m.meal_type)} · {fmtTime(m.start_time)}</div>

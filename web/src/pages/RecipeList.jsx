@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { StatusBadge, fmtTime, Empty } from '../ui.jsx';
+import { StatusBadge, fmtTime, Empty, CoverThumb } from '../ui.jsx';
 
 export default function RecipeList({ cooking }) {
   const { t, lang } = useI18n();
@@ -22,7 +22,7 @@ export default function RecipeList({ cooking }) {
           {!meals ? <Empty text="加载中…" /> : meals.map((m) => (
             <div key={m.meal_order_id} className="card tap" onClick={() => nav('/meal/' + m.meal_order_id)}>
               <div className="row">
-                <div className="thumb lg">{m.recipe.cover_image}</div>
+                <div className="thumb lg"><CoverThumb value={m.recipe.cover_image} /></div>
                 <div className="grow">
                   <div className="spread">
                     <span className="bold">{pick(lang, m.recipe.name, m.recipe.name_en)}</span>
@@ -56,7 +56,7 @@ export default function RecipeList({ cooking }) {
         {!recipes ? <Empty text="加载中…" /> : list.map((r) => (
           <div key={r.recipe_id} className="card tap" onClick={() => nav('/recipe/' + r.recipe_id)}>
             <div className="row">
-              <div className="thumb lg">{r.cover_image}</div>
+              <div className="thumb lg"><CoverThumb value={r.cover_image} /></div>
               <div className="grow">
                 <div className="spread">
                   <span className="bold">{pick(lang, r.name, r.name_en)}</span>

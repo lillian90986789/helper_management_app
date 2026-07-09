@@ -39,6 +39,12 @@ export function AvatarPicker({ value, onChange, emojis, showToast }) {
   );
 }
 
+// 菜谱封面：是图片 URL 就渲染成图片填满容器，否则显示 emoji 文本
+export function CoverThumb({ value, imgStyle }) {
+  if (isImgAvatar(value)) return <img src={value} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit', ...imgStyle }} />;
+  return <>{value}</>;
+}
+
 // 根据出生年月日自动算年龄（<2 岁显示月龄）
 export function ageFromBirth(birth, lang) {
   if (!birth) return '';

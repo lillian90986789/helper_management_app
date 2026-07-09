@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n } from '../i18n.jsx';
-import { TopBar } from '../ui.jsx';
+import { TopBar, AvatarPicker } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 const EMOJIS = ['🍲','🍅','🐟','🍚','🎃','🥦','🍗','🍜','🥘','🍳','🥗','🍤','🍛','🥟','🍠','🧆'];
@@ -38,10 +38,8 @@ export default function RecipeNew() {
       <TopBar title={en ? 'New Recipe' : '新建菜谱'} />
       <div className="content">
         <div className="field">
-          <label>{en ? 'Cover' : '封面'}</label>
-          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
-            {EMOJIS.map((e) => <button key={e} className={'thumb' + (f.cover_image === e ? '' : '')} style={{ outline: f.cover_image === e ? '2.5px solid var(--teal)' : 'none' }} onClick={() => set('cover_image', e)}>{e}</button>)}
-          </div>
+          <label>{en ? 'Cover' : '封面'} <span className="tiny muted">（{en ? 'pick an emoji or upload a photo' : '选表情或上传本地图片'}）</span></label>
+          <AvatarPicker value={f.cover_image} onChange={(v) => set('cover_image', v)} emojis={EMOJIS} showToast={showToast} />
         </div>
         <div className="field">
           <label>{en ? 'Recipe name' : '菜谱名称'} <span className="req">*</span></label>

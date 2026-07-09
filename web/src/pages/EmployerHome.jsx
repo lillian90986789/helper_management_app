@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { StatusBadge, fmtTime } from '../ui.jsx';
+import { StatusBadge, fmtTime, CoverThumb } from '../ui.jsx';
 
 export default function EmployerHome() {
   const { t, lang } = useI18n();
@@ -53,7 +53,7 @@ export default function EmployerHome() {
         <div className="card">
           {meals.slice(0, 4).map((m) => (
             <div key={m.meal_order_id} className="list-item" onClick={() => nav('/meal/' + m.meal_order_id)}>
-              <div className="thumb">{m.cover_image}</div>
+              <div className="thumb"><CoverThumb value={m.cover_image} /></div>
               <div className="grow">
                 <div className="bold">{pick(lang, m.recipe_name, m.recipe_name_en)}
                   {m.status === 'pending_review' && <span className="badge amber tiny" style={{ marginLeft: 6 }}>{t('pendingReview')}</span>}</div>
