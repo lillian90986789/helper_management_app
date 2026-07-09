@@ -1,0 +1,36 @@
+# 生产部署：应用 + Caddy（自动 HTTPS）
+# 用法：docker compose -f docker-compose.prod.yml up -d --build
+services:
+  homeflow:
+    build: .
+    container_name: homeflow
+    restart: unless-stopped
+    volumes:
+      # SQLite 数据库 + 上传的头像/小票，持久化到服务器本地 ./data，容器重建不丢
+      - ./data:/app/data
+    environment:
+      - PORT=8080
+      - DATA_DIR=/app/data
+      # 小票 OCR 用的 Key。把它写进同目录的 .env 文件里（ANTHROPIC_API_KEY=sk-ant-xxx），
+      # 不填则走「模拟识别」。.env 已被 .gitignore 忽略，不会进 git。
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    expose:
+      - "8080"          # 只在容器网络内暴露，由 Caddy 转发，不直接对公网开放
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"         # HTTP（Caddy 会自动跳转到 HTTPS）
+      - "443:443"       # HTTPS
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # 保存已申请的证书，重启不用重新申请
+      - caddy_config:/config
+    depends_on:
+      - homeflow
+
+volumes:
+  caddy_data:
+  caddy_config:
