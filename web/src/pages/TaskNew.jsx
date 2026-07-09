@@ -22,6 +22,7 @@ export default function TaskNew() {
   });
   const [subtasks, setSubtasks] = useState([{ title: '' }]);
   const [loaded, setLoaded] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
 
   // 编辑时回填
   if (editing && existing && !loaded) {
@@ -37,9 +38,18 @@ export default function TaskNew() {
 
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
+  const doDelete = async () => {
+    try { await api.templateOp(id, 'delete'); showToast(lang === 'en' ? 'Task deleted' : '任务已删除'); nav('/e/tasks', { replace: true }); }
+    catch { showToast(lang === 'en' ? 'Delete failed' : '删除失败'); }
+  };
+
   const submit = async (status) => {
     if (!f.task_name.trim()) return showToast(lang === 'en' ? 'Please enter task name' : '请填写任务名称');
-    if (f.weekdays.length === 0) return showToast(t('atLeastOneDay'));
+    if (f.weekdays.length === 0) {
+      // 编辑时不选任何执行日 = 删除该任务；新建时仍要求至少一天
+      if (editing) return setConfirmDel(true);
+      return showToast(t('atLeastOneDay'));
+    }
     const body = {
       ...f, status,
       checklist: subtasks.filter((s) => s.title.trim()).map((s) => ({ title: s.title, title_en: s.title_en || '', required: true })),
@@ -77,6 +87,7 @@ export default function TaskNew() {
         <div className="field">
           <label>{t('weekdayRun')} <span className="req">*</span></label>
           <WeekdayPicker value={f.weekdays} onChange={(v) => set('weekdays', v)} />
+          {editing && <div className="tiny muted" style={{ marginTop: 6 }}>{lang === 'en' ? 'Deselect all days and save to delete this task.' : '不选任何一天并保存，即可删除此任务。'}</div>}
         </div>
 
         <div className="field">
@@ -139,6 +150,20 @@ export default function TaskNew() {
         {!editing && <button className="btn outline" onClick={() => submit('draft')}>{t('saveDraft')}</button>}
         <button className="btn primary" style={{ flex: 2 }} onClick={() => submit('active')}>{editing ? t('save') : t('publishTask')}</button>
       </div>
+
+      {/* 编辑时不选任何执行日 = 删除任务，二次确认 */}
+      {confirmDel && (
+        <div className="sheet-mask" onClick={() => setConfirmDel(false)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="bold">{lang === 'en' ? 'Delete this task?' : '删除此任务？'}</div>
+            <div className="tiny muted" style={{ margin: '6px 0 14px' }}>{lang === 'en' ? 'No weekday selected — saving will delete this task.' : '未选择任何执行日，保存将删除此任务。'}</div>
+            <div className="btn-row">
+              <button className="btn outline" onClick={() => setConfirmDel(false)}>{t('cancel')}</button>
+              <button className="btn danger" style={{ flex: 2 }} onClick={doDelete}>{lang === 'en' ? 'Delete' : '删除'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

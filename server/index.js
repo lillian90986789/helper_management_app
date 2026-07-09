@@ -728,7 +728,7 @@ api.patch('/templates/:id', (req, res) => {
 // 暂停 / 恢复 / 删除（6.4 / 6.5）
 api.post('/templates/:id/:op', (req, res) => {
   const tpl = db.prepare('SELECT * FROM TaskTemplate WHERE task_template_id=?').get(req.params.id);
-  if (!tpl) return res.status(404).json({ error: 'not found' });
+  if (!tpl || tpl.family_id !== famId(req)) return res.status(404).json({ error: 'not found' });
   const op = req.params.op;
   if (op === 'pause') {
     db.prepare("UPDATE TaskTemplate SET status='paused' WHERE task_template_id=?").run(tpl.task_template_id);
