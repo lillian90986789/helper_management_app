@@ -24,15 +24,22 @@ export default function Me({ role }) {
   const [gstPct, setGstPct] = useState(null);
   useEffect(() => {
     api.bootstrap().then((b) => {
+      const users = b.users || [];
       setFamily(b.family?.family_name || (en ? 'My Family' : '我的家庭'));
       if (isEmp) {
         setGstPct(Math.round((b.family?.gst_rate ?? 0.09) * 100 * 100) / 100);
         let emp = null; try { emp = JSON.parse(localStorage.getItem('hf_employer') || 'null'); } catch {}
-        const e = emp || (b.users || []).find((u) => u.role === 'employer') || {};
+        // 只有存的身份在当前家庭里存在才用它，否则回退到家庭雇主（避免更新已删除的用户导致 404）
+        const dbUser = emp && users.find((u) => u.user_id === emp.user_id && u.role === 'employer');
+        const e = dbUser || users.find((u) => u.role === 'employer') || {};
         setProfile({ user_id: e.user_id, name: e.display_name || e.name || (en ? 'Employer' : '雇主'), avatar: e.avatar || '👨🏻‍💼' });
+        if (emp && !dbUser && e.user_id) { try { localStorage.setItem('hf_employer', JSON.stringify({ user_id: e.user_id, name: e.display_name || e.name, avatar: e.avatar })); } catch {} }
       } else {
         let m = null; try { m = JSON.parse(localStorage.getItem('hf_maid') || 'null'); } catch {}
-        setProfile({ user_id: m?.user_id || 2, name: m?.name || 'Siti', avatar: m?.avatar || '👩🏽‍🦱' });
+        const dbUser = m && users.find((u) => u.user_id === m.user_id && u.role === 'maid');
+        const mm = dbUser || users.find((u) => u.role === 'maid') || {};
+        setProfile({ user_id: mm.user_id || 2, name: dbUser?.name || m?.name || mm.name || 'Siti', avatar: dbUser?.avatar || m?.avatar || mm.avatar || '👩🏽‍🦱' });
+        if (m && !dbUser && mm.user_id) { try { localStorage.setItem('hf_maid', JSON.stringify({ ...m, user_id: mm.user_id, name: mm.name, avatar: mm.avatar })); } catch {} }
       }
     });
   }, [isEmp]);
