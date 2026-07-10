@@ -1,8 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n } from '../i18n.jsx';
 import { useApp } from '../App.jsx';
+
+// 加载 Google 身份服务脚本（只加载一次）
+let gsiPromise = null;
+function loadGsi() {
+  if (window.google?.accounts?.id) return Promise.resolve();
+  if (gsiPromise) return gsiPromise;
+  gsiPromise = new Promise((ok, err) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true;
+    s.onload = ok; s.onerror = err; document.head.appendChild(s);
+  });
+  return gsiPromise;
+}
 
 // 雇主：用户名 + 密码 注册 / 登录（女佣走邀请码 /join）
 export default function EmployerAuth() {
@@ -16,6 +29,7 @@ export default function EmployerAuth() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const gbtn = useRef(null);
 
   const finish = (r) => {
     try {
@@ -24,6 +38,25 @@ export default function EmployerAuth() {
     } catch {}
     nav('/e/home', { replace: true });
   };
+
+  // Google 登录：仅当服务器配了 GOOGLE_CLIENT_ID 时渲染按钮
+  useEffect(() => {
+    let cancelled = false;
+    api.runtimeConfig().then(async (cfg) => {
+      if (cancelled || !cfg?.google_client_id) return;
+      await loadGsi();
+      if (cancelled || !window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({
+        client_id: cfg.google_client_id,
+        callback: async ({ credential }) => {
+          try { finish(await api.authGoogle(credential)); }
+          catch (e) { showToast(tt('Google 登录失败', 'Google sign-in failed')); }
+        },
+      });
+      if (gbtn.current) window.google.accounts.id.renderButton(gbtn.current, { theme: 'outline', size: 'large', width: 300, text: 'continue_with' });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const submit = async () => {
     if (!f.username.trim()) return showToast(tt('请输入用户名', 'Enter a username'));
@@ -91,6 +124,9 @@ export default function EmployerAuth() {
             <input className="input" value={f.family_name} placeholder={tt('例如 高先生家', 'e.g. Gao Family')} onChange={(e) => set('family_name', e.target.value)} />
           </div>
         </>}
+
+        {/* Google 登录（仅服务器配置了 GOOGLE_CLIENT_ID 时显示）*/}
+        <div ref={gbtn} style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }} />
       </div>
 
       <div className="actionbar" style={{ flexDirection: 'column', gap: 10 }}>
