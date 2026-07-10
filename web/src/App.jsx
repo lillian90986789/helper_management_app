@@ -27,6 +27,10 @@ import MonthlyExpense from './pages/MonthlyExpense.jsx';
 import Notifications from './pages/Notifications.jsx';
 import Members from './pages/Members.jsx';
 import Me from './pages/Me.jsx';
+import Subscribe from './pages/Subscribe.jsx';
+import SubscribePay from './pages/SubscribePay.jsx';
+import MaidLocked from './pages/MaidLocked.jsx';
+import AdminConsole from './pages/AdminConsole.jsx';
 
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -92,7 +96,7 @@ export default function App() {
   };
   useEffect(() => {
     const p = loc.pathname;
-    if (['/register', '/login', '/register-wizard', '/join'].includes(p)) return;   // 公共页
+    if (['/register', '/login', '/register-wizard', '/join', '/admin'].includes(p)) return;   // 公共页
     if (p === '/') {
       if (authed('employer')) nav('/e/home', { replace: true });
       else if (authed('maid')) nav('/m/today', { replace: true });
@@ -105,6 +109,14 @@ export default function App() {
     else need = role;                 // 共享详情页按当前粘性角色判定
     if (need && !authed(need)) nav(need === 'maid' ? '/join' : '/login', { replace: true });
   }, [loc.pathname, role]);
+
+  // 管理员后台：桌面工具，全屏渲染（不套手机外壳）
+  if (loc.pathname === '/admin') return (
+    <AppCtx.Provider value={{ showToast, role }}>
+      <div style={{ minHeight: '100vh', background: 'var(--bg)' }}><AdminConsole /></div>
+      <Toast msg={toast} />
+    </AppCtx.Provider>
+  );
 
   return (
     <AppCtx.Provider value={{ showToast, role }}>
@@ -161,6 +173,10 @@ export default function App() {
               <Route path="/expense" element={<MonthlyExpense />} />
               <Route path="/members" element={<Members />} />
               <Route path="/notifications" element={<Notifications />} />
+              <Route path="/subscribe" element={<Subscribe />} />
+              <Route path="/subscribe/pay/:order_no" element={<SubscribePay />} />
+              <Route path="/locked" element={<MaidLocked />} />
+              <Route path="/admin" element={<AdminConsole />} />
             </Routes>
           </div>
           {showTabs && <TabBar role={role} />}

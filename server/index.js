@@ -26,11 +26,19 @@ api.use((req, res, next) => {
     const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(uid);
     if (fm) { req.userId = uid; req.familyId = fm.family_id; }
   }
-  // 公共端点无需登录：运行配置、各类登录/注册、女佣凭邀请码加入
+  // 管理后台走独立的管理员密钥鉴权（adminGuard），此处放行家庭登录校验
   const p = req.path;
+  if (p.startsWith('/admin/')) return next();
+  // 公共端点无需登录：运行配置、各类登录/注册、女佣凭邀请码加入
   const isPublic = p === '/config' || p === '/join' || p.startsWith('/auth/');
   if (isPublic || req.method === 'OPTIONS') return next();
   if (!req.familyId) return res.status(401).json({ error: 'auth_required' });
+  // 订阅到期锁定：业务接口返回 402；订阅/账号相关端点不拦截
+  if (SUBSCRIPTION_GATED.some((g) => p.startsWith(g))) {
+    const sv = subView(req.familyId);
+    if (sv.access_status === 'LOCKED')
+      return res.status(402).json({ code: 'SUBSCRIPTION_REQUIRED', message: 'Your family subscription has expired.', subscription_status: sv.status, payment_required: true });
+  }
   next();
 });
 // 当前家庭（按登录用户）。未登录时的受保护端点已被上面拦截，这里必有 familyId。
@@ -51,6 +59,93 @@ const resolveHelperId = (req, raw) => {
   }
   return defaultHelperId(req.familyId);
 };
+
+// ===== 用户订阅与收费 =====
+const PLANS = {
+  monthly: { plan_id: 'monthly', name: 'Monthly Subscription', name_zh: '月度订阅', price: 5.99, currency: 'SGD', period: 'MONTH', months: 1 },
+  yearly:  { plan_id: 'yearly',  name: 'Yearly Subscription',  name_zh: '年度订阅', price: 59.99, currency: 'SGD', period: 'YEAR', months: 12 },
+};
+// 加自然月（末日对齐：1/31 + 1月 → 2/28）
+function addMonths(date, n) {
+  const d = new Date(date); const day = d.getDate();
+  d.setMonth(d.getMonth() + n);
+  if (d.getDate() < day) d.setDate(0);
+  return d;
+}
+const getConfig = (k) => { const r = db.prepare('SELECT config_value FROM AppConfig WHERE config_key=?').get(k); return r ? r.config_value : null; };
+const setConfig = (k, v) => db.prepare(`INSERT INTO AppConfig (config_key,config_value,updated_at) VALUES (?,?,datetime('now'))
+  ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, updated_at=datetime('now')`).run(k, String(v ?? ''));
+// 无订阅记录则新建 1 个自然月免费试用（注册时/存量家庭首次访问时）
+function ensureSubscription(familyId) {
+  let s = db.prepare('SELECT * FROM FamilySubscription WHERE family_id=?').get(familyId);
+  if (!s) {
+    const now = new Date();
+    db.prepare(`INSERT INTO FamilySubscription (family_id, plan_id, status, trial_start_at, trial_end_at, access_status, updated_at)
+      VALUES (?, 'trial', 'TRIAL_ACTIVE', ?, ?, 'ACTIVE', datetime('now'))`).run(familyId, now.toISOString(), addMonths(now, 1).toISOString());
+    s = db.prepare('SELECT * FROM FamilySubscription WHERE family_id=?').get(familyId);
+  }
+  return s;
+}
+// 计算订阅视图（状态/有效期/剩余天数/access），并回写状态便于后台过滤
+function subView(familyId) {
+  const s = ensureSubscription(familyId);
+  const now = new Date();
+  const times = [s.trial_end_at, s.current_period_end_at].filter(Boolean).map((x) => new Date(x).getTime());
+  const paid = !!s.current_period_end_at;
+  const expire = new Date(times.length ? Math.max(...times) : now.getTime());
+  const active = now.getTime() < expire.getTime();
+  const daysLeft = Math.max(0, Math.ceil((expire.getTime() - now.getTime()) / 86400000));
+  let status;
+  if (!active) status = 'EXPIRED';
+  else if (paid) status = (s.plan_id === 'yearly' ? daysLeft <= 30 : daysLeft <= 3) ? 'EXPIRING_SOON' : 'ACTIVE';
+  else status = 'TRIAL_ACTIVE';
+  const access_status = active ? 'ACTIVE' : 'LOCKED';
+  if (s.status !== status || s.access_status !== access_status)
+    db.prepare("UPDATE FamilySubscription SET status=?, access_status=?, updated_at=datetime('now') WHERE family_id=?").run(status, access_status, familyId);
+  return { subscription_id: s.subscription_id, family_id: familyId, plan_id: s.plan_id, is_trial: !paid,
+    status, access_status, trial_start_at: s.trial_start_at, trial_end_at: s.trial_end_at,
+    current_period_start_at: s.current_period_start_at, current_period_end_at: s.current_period_end_at,
+    expire_at: expire.toISOString(), remaining_days: daysLeft, active };
+}
+// 开通/续期（幂等；据规则计算新到期：仍有效则叠加，否则从现在起算）
+function activateSubscription(order, opts = {}) {
+  const fresh = db.prepare('SELECT * FROM PaymentOrder WHERE payment_order_id=?').get(order.payment_order_id);
+  if (fresh && fresh.status === 'PAID') return subView(order.family_id);   // 幂等
+  const plan = PLANS[order.plan_id] || PLANS.monthly;
+  const now = new Date();
+  const s = ensureSubscription(order.family_id);
+  const times = [s.trial_end_at, s.current_period_end_at].filter(Boolean).map((x) => new Date(x).getTime());
+  const latest = times.length ? Math.max(...times) : 0;
+  const base = latest > now.getTime() ? new Date(latest) : now;
+  const newEnd = addMonths(base, plan.months);
+  const tx = db.transaction(() => {
+    db.prepare("UPDATE PaymentOrder SET status='PAID', paid_at=datetime('now'), confirmed_by=?, updated_at=datetime('now') WHERE payment_order_id=?").run(opts.by || 'super', order.payment_order_id);
+    db.prepare(`UPDATE FamilySubscription SET plan_id=?, status='ACTIVE', access_status='ACTIVE',
+        current_period_start_at=?, current_period_end_at=?, last_payment_order_id=?, updated_at=datetime('now') WHERE family_id=?`)
+      .run(plan.plan_id, base.toISOString(), newEnd.toISOString(), order.payment_order_id, order.family_id);
+    db.prepare(`INSERT INTO SubscriptionHistory (family_id, old_status, new_status, old_expire_at, new_expire_at, plan_id, reason, payment_order_id)
+      VALUES (?,?,?,?,?,?,?,?)`).run(order.family_id, s.status, 'ACTIVE', latest ? new Date(latest).toISOString() : null, newEnd.toISOString(), plan.plan_id, opts.reason || 'payment_confirmed', order.payment_order_id);
+    notify(order.family_id, 'subscription', '订阅已开通', `${plan.name_zh}已开通，有效期至 ${newEnd.toISOString().slice(0, 10)}`, 'subscription', order.payment_order_id, 'employer');
+    notify(order.family_id, 'subscription', '家庭订阅已恢复', '现在可以继续使用任务、菜谱和采购功能', 'subscription', order.payment_order_id, 'maid');
+  });
+  tx();
+  return subView(order.family_id);
+}
+// 到期锁定：这些业务前缀在 LOCKED 时返回 402
+const SUBSCRIPTION_GATED = ['/daily', '/week', '/month', '/stats', '/templates', '/recipes', '/meals', '/shopping', '/items', '/rest-days', '/expense', '/categories', '/checklist', '/dashboard'];
+// 管理员鉴权（MVP：单超级管理员密钥 ADMIN_KEY）
+const adminGuard = (req, res, next) => {
+  const key = process.env.ADMIN_KEY;
+  if (!key) return res.status(403).json({ error: 'admin_disabled' });
+  if ((req.headers['x-admin-key'] || '') !== key) return res.status(401).json({ error: 'bad_admin_key' });
+  next();
+};
+const audit = (req, action, t = {}) => db.prepare(`INSERT INTO AdminAuditLog (admin_id, action_type, target_user_id, target_family_id, target_payment_order_id, old_value, new_value, reason, ip_address)
+  VALUES ('super', ?,?,?,?,?,?,?,?)`).run(action, t.user_id ?? null, t.family_id ?? null, t.order_id ?? null, t.old ?? null, t.new ?? null, t.reason ?? null, req.ip || '');
+const familyPaid = (fid) => db.prepare("SELECT COALESCE(SUM(amount),0) s, COUNT(*) c FROM PaymentOrder WHERE family_id=? AND status='PAID'").get(fid);
+const userPaid = (uid) => db.prepare("SELECT COALESCE(SUM(amount),0) s, COUNT(*) c FROM PaymentOrder WHERE payer_user_id=? AND status='PAID'").get(uid);
+const maskPhone = (p) => (p ? String(p).replace(/.(?=.{4})/g, '*') : '');
+const maskEmail = (e) => { if (!e) return ''; const [a, b] = String(e).split('@'); return a.slice(0, 3) + '****@' + (b || ''); };
 // 新建一个独立且初始为空的家庭（含默认区域，但无任务/菜单/采购）
 function createEmptyFamily(familyName) {
   const code = 'HOME-' + Math.floor(1000 + Math.random() * 9000);
@@ -388,6 +483,7 @@ api.post('/auth/employer/register', (req, res) => {
       VALUES (?,?,?, '👨🏻‍💼', 'employer', 'password', 'zh', 'active', 'COMPLETED', datetime('now'), datetime('now'))`)
       .run(fullName, username, hashPwd(password)).lastInsertRowid;
     db.prepare("INSERT INTO FamilyMember (family_id,user_id,role,permissions,status) VALUES (?,?,?,?,?)").run(family.family_id, uid, 'employer', 'owner', 'active');
+    ensureSubscription(family.family_id);   // 注册即开始 1 个月免费试用
     return { uid, family };
   });
   let r; try { r = tx(); } catch (e) { return res.status(500).json({ error: 'register_failed', detail: String(e.message || e) }); }
@@ -1298,6 +1394,157 @@ api.post('/notifications/:id/read', (req,res)=>{
   const n = db.prepare('SELECT * FROM Notification WHERE notification_id=?').get(req.params.id);
   if (!owns(req, n)) return res.status(404).json({ error: 'not found' });
   db.prepare('UPDATE Notification SET is_read=1 WHERE notification_id=?').run(n.notification_id); res.json({ok:true});
+});
+
+// ===================== 订阅：用户侧接口 =====================
+api.get('/subscription/plans', (req, res) => res.json(Object.values(PLANS).map((p) => ({ plan_id: p.plan_id, name: p.name, name_zh: p.name_zh, price: p.price.toFixed(2), currency: p.currency, period: p.period }))));
+api.get('/subscription/current', (req, res) => res.json({ ...subView(req.familyId), paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') }));
+api.post('/subscription/payment-orders', (req, res) => {
+  const me = db.prepare('SELECT role FROM User WHERE user_id=?').get(req.userId);
+  if (!me || me.role !== 'employer') return res.status(403).json({ error: 'only_employer_can_pay' });   // 女佣不能付款
+  const plan = PLANS[req.body.plan_id];
+  if (!plan) return res.status(400).json({ error: 'invalid_plan' });   // 前端只传 plan_id，金额后端定
+  const order_no = 'SUB_' + todayYmd().replace(/-/g, '') + '_' + Math.random().toString(36).slice(2, 8).toUpperCase();
+  db.prepare(`INSERT INTO PaymentOrder (order_no, family_id, payer_user_id, plan_id, amount, currency, status) VALUES (?,?,?,?,?,?, 'PENDING')`)
+    .run(order_no, req.familyId, req.userId, plan.plan_id, plan.price, plan.currency);
+  res.json({ order_no, plan_id: plan.plan_id, plan_name: plan.name_zh, amount: plan.price.toFixed(2), currency: plan.currency, status: 'PENDING',
+    paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') });
+});
+api.get('/subscription/payment-orders/:order_no', (req, res) => {
+  const o = db.prepare('SELECT * FROM PaymentOrder WHERE order_no=?').get(req.params.order_no);
+  if (!o || o.family_id !== req.familyId) return res.status(404).json({ error: 'not found' });
+  res.json({ order_no: o.order_no, status: o.status, amount: o.amount.toFixed(2), currency: o.currency, plan_id: o.plan_id, plan_name: (PLANS[o.plan_id] || {}).name_zh,
+    paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') });
+});
+api.post('/subscription/payment-orders/:order_no/claim', (req, res) => {   // 我已付款 → 待管理员确认
+  const o = db.prepare('SELECT * FROM PaymentOrder WHERE order_no=?').get(req.params.order_no);
+  if (!o || o.family_id !== req.familyId) return res.status(404).json({ error: 'not found' });
+  if (o.status === 'PENDING') db.prepare("UPDATE PaymentOrder SET status='SUBMITTED', claimed_at=datetime('now'), updated_at=datetime('now') WHERE payment_order_id=?").run(o.payment_order_id);
+  res.json({ order_no: o.order_no, status: db.prepare('SELECT status FROM PaymentOrder WHERE payment_order_id=?').get(o.payment_order_id).status });
+});
+
+// ===================== 管理后台接口（ADMIN_KEY 鉴权） =====================
+api.get('/admin/ping', adminGuard, (req, res) => res.json({ ok: true }));
+api.get('/admin/dashboard', adminGuard, (req, res) => {
+  const users = db.prepare('SELECT role FROM User').all();
+  const fams = db.prepare('SELECT family_id FROM Family').all();
+  const c = { TRIAL_ACTIVE: 0, ACTIVE: 0, EXPIRING_SOON: 0, EXPIRED: 0, monthly: 0, yearly: 0 };
+  for (const f of fams) { const v = subView(f.family_id); c[v.status] = (c[v.status] || 0) + 1; if (v.active && v.plan_id !== 'trial') c[v.plan_id] = (c[v.plan_id] || 0) + 1; }
+  const sum = (sql, ...a) => db.prepare(sql).get(...a).s;
+  res.json({
+    users_total: users.length, employers: users.filter(u => u.role === 'employer').length, maids: users.filter(u => u.role === 'maid').length,
+    families_total: fams.length, trial: c.TRIAL_ACTIVE, monthly: c.monthly, yearly: c.yearly, active_paid: c.monthly + c.yearly,
+    expiring_soon: c.EXPIRING_SOON, expired: c.EXPIRED,
+    revenue_total: sum("SELECT COALESCE(SUM(amount),0) s FROM PaymentOrder WHERE status='PAID'"),
+    revenue_month: sum("SELECT COALESCE(SUM(amount),0) s FROM PaymentOrder WHERE status='PAID' AND substr(COALESCE(paid_at,created_at),1,7)=?", todayYmd().slice(0, 7)),
+    revenue_today: sum("SELECT COALESCE(SUM(amount),0) s FROM PaymentOrder WHERE status='PAID' AND substr(COALESCE(paid_at,created_at),1,10)=?", todayYmd()),
+    pending_orders: db.prepare("SELECT COUNT(*) c FROM PaymentOrder WHERE status IN ('PENDING','SUBMITTED')").get().c,
+  });
+});
+api.get('/admin/orders', adminGuard, (req, res) => {
+  let sql = `SELECT po.*, f.family_name, u.name payer_name FROM PaymentOrder po
+    LEFT JOIN Family f ON f.family_id=po.family_id LEFT JOIN User u ON u.user_id=po.payer_user_id`;
+  const args = []; if (req.query.status) { sql += ' WHERE po.status=?'; args.push(req.query.status); }
+  sql += ' ORDER BY po.payment_order_id DESC LIMIT 300';
+  res.json(db.prepare(sql).all(...args));
+});
+api.post('/admin/orders/:order_no/confirm', adminGuard, (req, res) => {   // 手动确认到账 → 开通
+  const o = db.prepare('SELECT * FROM PaymentOrder WHERE order_no=?').get(req.params.order_no);
+  if (!o) return res.status(404).json({ error: 'not found' });
+  if (o.status === 'PAID') return res.json({ ok: true, already: true, subscription: subView(o.family_id) });
+  const v = activateSubscription(o, { by: 'super', reason: 'admin_confirm' });
+  audit(req, 'PAYMENT_MANUALLY_CONFIRMED', { family_id: o.family_id, user_id: o.payer_user_id, order_id: o.payment_order_id, new: v.expire_at });
+  res.json({ ok: true, subscription: v });
+});
+api.post('/admin/orders/:order_no/reject', adminGuard, (req, res) => {
+  const o = db.prepare('SELECT * FROM PaymentOrder WHERE order_no=?').get(req.params.order_no);
+  if (!o) return res.status(404).json({ error: 'not found' });
+  db.prepare("UPDATE PaymentOrder SET status='CANCELLED', note=?, updated_at=datetime('now') WHERE order_no=?").run(req.body.reason || '', req.params.order_no);
+  audit(req, 'PAYMENT_REJECTED', { family_id: o.family_id, order_id: o.payment_order_id, reason: req.body.reason });
+  res.json({ ok: true });
+});
+api.get('/admin/subscriptions', adminGuard, (req, res) => {
+  const fams = db.prepare(`SELECT f.family_id, f.family_name,
+      (SELECT u.name FROM FamilyMember fm JOIN User u ON u.user_id=fm.user_id WHERE fm.family_id=f.family_id AND fm.role='employer' AND fm.status='active' ORDER BY fm.family_member_id LIMIT 1) owner_name
+    FROM Family f`).all();
+  let rows = fams.map((f) => { const v = subView(f.family_id); const p = familyPaid(f.family_id); return { ...f, ...v, total_paid: p.s, pay_count: p.c }; });
+  if (req.query.status) rows = rows.filter((r) => r.status === req.query.status);
+  res.json(rows.sort((a, b) => b.family_id - a.family_id));
+});
+api.post('/admin/families/:familyId/extend', adminGuard, (req, res) => {
+  const fid = +req.params.familyId; const days = +req.body.days || 0;
+  if (!days) return res.status(400).json({ error: 'days_required' });
+  if (!req.body.reason) return res.status(400).json({ error: 'reason_required' });
+  const s = ensureSubscription(fid);
+  const times = [s.trial_end_at, s.current_period_end_at].filter(Boolean).map((x) => new Date(x).getTime());
+  const now = Date.now(); const latest = times.length ? Math.max(...times) : 0;
+  const base = latest > now ? new Date(latest) : new Date();
+  const newEnd = new Date(base.getTime() + days * 86400000);
+  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, status='ACTIVE', access_status='ACTIVE', updated_at=datetime('now') WHERE family_id=?").run(newEnd.toISOString(), fid);
+  db.prepare(`INSERT INTO SubscriptionHistory (family_id, old_status, new_status, old_expire_at, new_expire_at, plan_id, reason) VALUES (?,?,?,?,?,?,?)`)
+    .run(fid, s.status, 'ACTIVE', latest ? new Date(latest).toISOString() : null, newEnd.toISOString(), s.plan_id, req.body.reason);
+  audit(req, 'SUBSCRIPTION_EXTENDED', { family_id: fid, old: latest ? new Date(latest).toISOString() : null, new: newEnd.toISOString(), reason: req.body.reason });
+  if (req.body.notify_user !== false) notify(fid, 'subscription', '订阅已延长', `管理员为你延长 ${days} 天，有效期至 ${newEnd.toISOString().slice(0, 10)}`, 'subscription', null, 'employer');
+  res.json({ ok: true, subscription: subView(fid) });
+});
+api.post('/admin/families/:familyId/lock', adminGuard, (req, res) => {
+  const fid = +req.params.familyId; ensureSubscription(fid); const nowIso = new Date().toISOString();
+  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, trial_end_at=?, status='LOCKED', access_status='LOCKED', updated_at=datetime('now') WHERE family_id=?").run(nowIso, nowIso, fid);
+  audit(req, 'SUBSCRIPTION_LOCKED', { family_id: fid, reason: req.body.reason });
+  res.json({ ok: true });
+});
+api.post('/admin/families/:familyId/unlock', adminGuard, (req, res) => {
+  const fid = +req.params.familyId; ensureSubscription(fid); const newEnd = addMonths(new Date(), 1);
+  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, status='ACTIVE', access_status='ACTIVE', updated_at=datetime('now') WHERE family_id=?").run(newEnd.toISOString(), fid);
+  audit(req, 'SUBSCRIPTION_UNLOCKED', { family_id: fid, new: newEnd.toISOString(), reason: req.body.reason });
+  res.json({ ok: true, subscription: subView(fid) });
+});
+api.get('/admin/users', adminGuard, (req, res) => {
+  const kw = (req.query.keyword || '').trim();
+  let sql = `SELECT u.user_id, u.name, u.display_name, u.username, u.role, u.email, u.phone, u.account_status, u.created_at, u.last_login_at,
+      fm.family_id, f.family_name FROM User u
+      LEFT JOIN FamilyMember fm ON fm.user_id=u.user_id AND fm.status='active'
+      LEFT JOIN Family f ON f.family_id=fm.family_id`;
+  const args = []; const where = [];
+  if (kw) { where.push('(u.name LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR f.family_name LIKE ? OR CAST(u.user_id AS TEXT)=?)'); args.push(`%${kw}%`, `%${kw}%`, `%${kw}%`, `%${kw}%`, kw); }
+  if (req.query.role) { where.push('u.role=?'); args.push(req.query.role); }
+  if (where.length) sql += ' WHERE ' + where.join(' AND ');
+  sql += ' ORDER BY u.user_id DESC LIMIT 200';
+  res.json(db.prepare(sql).all(...args).map((u) => {
+    const sv = u.family_id ? subView(u.family_id) : null;
+    return { user_id: u.user_id, name: u.display_name || u.name, username: u.username, role: u.role,
+      phone: maskPhone(u.phone), email: maskEmail(u.email), family_id: u.family_id, family_name: u.family_name,
+      account_status: u.account_status || 'active', created_at: u.created_at, last_login_at: u.last_login_at,
+      sub_status: sv ? sv.status : null, plan_id: sv ? sv.plan_id : null, expire_at: sv ? sv.expire_at : null, personal_paid: userPaid(u.user_id).s };
+  }));
+});
+api.get('/admin/users/:id', adminGuard, (req, res) => {
+  const u = db.prepare('SELECT * FROM User WHERE user_id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  const fm = db.prepare("SELECT family_id, role, join_date FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(u.user_id);
+  const fam = fm ? db.prepare('SELECT * FROM Family WHERE family_id=?').get(fm.family_id) : null;
+  const orders = db.prepare('SELECT order_no, plan_id, amount, currency, status, created_at, paid_at FROM PaymentOrder WHERE payer_user_id=? OR family_id=? ORDER BY payment_order_id DESC LIMIT 50').all(u.user_id, fm ? fm.family_id : 0);
+  audit(req, 'USER_VIEWED', { user_id: u.user_id, family_id: fm ? fm.family_id : null });
+  res.json({   // 绝不返回 password_hash
+    profile: { user_id: u.user_id, name: u.display_name || u.name, username: u.username, role: u.role, avatar: u.avatar,
+      phone: maskPhone(u.phone), email: maskEmail(u.email), gender: u.gender, country: u.country, created_at: u.created_at, last_login_at: u.last_login_at, account_status: u.account_status || 'active' },
+    family: fam ? { family_id: fam.family_id, family_name: fam.family_name, role: fm.role, invite_code: fam.invite_code } : null,
+    subscription: fm ? subView(fm.family_id) : null,
+    personal_paid: userPaid(u.user_id).s, family_paid: fm ? familyPaid(fm.family_id).s : 0, orders,
+  });
+});
+api.get('/admin/audit', adminGuard, (req, res) => res.json(db.prepare('SELECT * FROM AdminAuditLog ORDER BY audit_log_id DESC LIMIT 200').all()));
+api.get('/admin/config', adminGuard, (req, res) => res.json({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') }));
+api.post('/admin/config', adminGuard, (req, res) => {
+  const b = req.body;
+  if (b.paynow_name !== undefined) setConfig('paynow_name', b.paynow_name);
+  if (b.image_base64) {
+    const base64 = b.image_base64.replace(/^data:[^;]+;base64,/, ''); const mt = b.media_type || 'image/png';
+    const ext = (mt.split('/')[1] || 'png').replace('jpeg', 'jpg'); const fname = `paynow_${Date.now()}.${ext}`;
+    try { fs.writeFileSync(join(uploadsDir, fname), Buffer.from(base64, 'base64')); setConfig('paynow_qr_url', `/uploads/${fname}`); }
+    catch (e) { return res.status(500).json({ error: 'save_failed' }); }
+  } else if (b.paynow_qr_url !== undefined) setConfig('paynow_qr_url', b.paynow_qr_url);
+  res.json({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') });
 });
 
 app.use('/api', api);

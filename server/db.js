@@ -427,4 +427,78 @@ addCol('ShoppingList', 'reimbursement_status', "TEXT DEFAULT 'none'"); // none|t
 addCol('ShoppingList', 'confirmed_at', 'TEXT');
 addCol('ShoppingList', 'submitted_at', 'TEXT');
 
+// ---- 用户订阅与收费模块 ----
+db.exec(`
+CREATE TABLE IF NOT EXISTS FamilySubscription (
+  subscription_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  family_id INTEGER UNIQUE,
+  plan_id TEXT DEFAULT 'trial',              -- trial|monthly|yearly（当前/最近套餐）
+  status TEXT DEFAULT 'TRIAL_ACTIVE',        -- TRIAL_ACTIVE|ACTIVE|EXPIRING_SOON|EXPIRED|LOCKED
+  trial_start_at TEXT,
+  trial_end_at TEXT,
+  current_period_start_at TEXT,
+  current_period_end_at TEXT,
+  access_status TEXT DEFAULT 'ACTIVE',        -- ACTIVE|LOCKED
+  last_payment_order_id INTEGER,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS PaymentOrder (
+  payment_order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_no TEXT UNIQUE,
+  family_id INTEGER,
+  payer_user_id INTEGER,
+  plan_id TEXT,
+  amount REAL,
+  currency TEXT DEFAULT 'SGD',
+  payment_provider TEXT DEFAULT 'PAYNOW_MANUAL',
+  payment_method TEXT DEFAULT 'PAYNOW',
+  status TEXT DEFAULT 'PENDING',              -- PENDING|SUBMITTED|PAID|EXPIRED|CANCELLED|REJECTED
+  claimed_at TEXT,                            -- 用户点“我已付款”
+  paid_at TEXT,
+  confirmed_by TEXT,                          -- 管理员确认人
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS SubscriptionHistory (
+  history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  family_id INTEGER,
+  old_status TEXT,
+  new_status TEXT,
+  old_expire_at TEXT,
+  new_expire_at TEXT,
+  plan_id TEXT,
+  reason TEXT,
+  payment_order_id INTEGER,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS AppConfig (
+  config_key TEXT PRIMARY KEY,
+  config_value TEXT,
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS AdminAuditLog (
+  audit_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id TEXT,                              -- MVP：单超级管理员，记 'super'
+  action_type TEXT,                           -- SUBSCRIPTION_EXTENDED / PAYMENT_MANUALLY_CONFIRMED / ...
+  target_user_id INTEGER,
+  target_family_id INTEGER,
+  target_payment_order_id INTEGER,
+  old_value TEXT,
+  new_value TEXT,
+  reason TEXT,
+  ip_address TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS AdminNote (
+  note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  family_id INTEGER,
+  admin_id TEXT,
+  note_content TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
 export default db;

@@ -25,6 +25,13 @@ async function req(path, opts) {
     const h = location.hash || '';
     if (!/^#\/(login|register|join)/.test(h)) location.hash = '#/login';
   }
+  if (r.status === 402) {
+    // 订阅到期：雇主去套餐/续费页，女佣去锁定提示页
+    const h = location.hash || '';
+    const role = localStorage.getItem('hf_role');
+    if (role === 'maid') { if (!/^#\/locked/.test(h)) location.hash = '#/locked'; }
+    else if (!/^#\/subscribe/.test(h)) location.hash = '#/subscribe';
+  }
   if (!r.ok) {
     let body = {};
     try { body = await r.json(); } catch {}
@@ -34,8 +41,42 @@ async function req(path, opts) {
   }
   return r.json();
 }
+// 管理后台请求：用 localStorage 里的管理员密钥
+const adminKey = () => localStorage.getItem('hf_admin_key') || '';
+async function areq(path, opts) {
+  const r = await fetch(base + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey(), ...(opts?.headers || {}) },
+    body: opts?.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!r.ok) { let b = {}; try { b = await r.json(); } catch {} const e = new Error(b.error || ('API ' + r.status)); e.status = r.status; e.code = b.error; throw e; }
+  return r.json();
+}
+export const adminApi = {
+  ping: () => areq('/admin/ping'),
+  dashboard: () => areq('/admin/dashboard'),
+  orders: (status) => areq('/admin/orders' + (status ? '?status=' + status : '')),
+  confirmOrder: (no) => areq(`/admin/orders/${no}/confirm`, { method: 'POST' }),
+  rejectOrder: (no, reason) => areq(`/admin/orders/${no}/reject`, { method: 'POST', body: { reason } }),
+  subscriptions: (status) => areq('/admin/subscriptions' + (status ? '?status=' + status : '')),
+  extend: (fid, body) => areq(`/admin/families/${fid}/extend`, { method: 'POST', body }),
+  lock: (fid, reason) => areq(`/admin/families/${fid}/lock`, { method: 'POST', body: { reason } }),
+  unlock: (fid, reason) => areq(`/admin/families/${fid}/unlock`, { method: 'POST', body: { reason } }),
+  users: (kw) => areq('/admin/users' + (kw ? '?keyword=' + encodeURIComponent(kw) : '')),
+  user: (id) => areq('/admin/users/' + id),
+  audit: () => areq('/admin/audit'),
+  getConfig: () => areq('/admin/config'),
+  setConfig: (body) => areq('/admin/config', { method: 'POST', body }),
+};
+
 export const api = {
   bootstrap: () => req('/bootstrap'),
+  // 订阅与收费
+  subPlans: () => req('/subscription/plans'),
+  subCurrent: () => req('/subscription/current'),
+  createPaymentOrder: (plan_id) => req('/subscription/payment-orders', { method: 'POST', body: { plan_id } }),
+  getPaymentOrder: (no) => req('/subscription/payment-orders/' + no),
+  claimPayment: (no) => req(`/subscription/payment-orders/${no}/claim`, { method: 'POST' }),
   members: () => req('/members'),
   addMember: (body) => req('/members', { method: 'POST', body }),
   updateUser: (id, body) => req(`/users/${id}`, { method: 'PATCH', body }),

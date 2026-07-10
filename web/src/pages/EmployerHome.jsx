@@ -8,6 +8,7 @@ export default function EmployerHome() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const { data, reload } = useAsync(() => api.dashEmployer());
+  const { data: sub } = useAsync(() => api.subCurrent().catch(() => null));
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
   const { summary, meals, shoppingSummary, notifications, family } = data;
   const unread = notifications.filter((n) => !n.is_read).length;
@@ -32,6 +33,24 @@ export default function EmployerHome() {
       </div>
 
       <div className="content">
+        {/* 订阅状态卡片 */}
+        {sub && (
+          <div className="card tap" onClick={() => nav('/subscribe')}
+            style={{ borderLeft: '3px solid ' + (sub.status === 'EXPIRING_SOON' ? 'var(--amber)' : sub.status === 'EXPIRED' ? 'var(--red)' : 'var(--teal)') }}>
+            <div className="spread">
+              <div>
+                <span className="bold small">{sub.is_trial ? (lang === 'en' ? 'Free trial' : '免费试用') : (sub.plan_id === 'yearly' ? (lang === 'en' ? 'Yearly plan' : '年度订阅') : (lang === 'en' ? 'Monthly plan' : '月度订阅'))}</span>
+                <div className="tiny muted mt4">
+                  {sub.status === 'EXPIRED' ? (lang === 'en' ? 'Expired' : '已到期')
+                    : (lang === 'en' ? 'Until ' : '有效期至 ') + (sub.expire_at || '').slice(0, 10) + ' · ' + (lang === 'en' ? sub.remaining_days + 'd left' : '剩余 ' + sub.remaining_days + ' 天')}
+                </div>
+              </div>
+              <button className="btn sm primary">{['TRIAL_ACTIVE', 'ACTIVE'].includes(sub.status) ? (lang === 'en' ? 'Manage' : '查看') : (lang === 'en' ? 'Renew' : '续费')}</button>
+            </div>
+            {sub.status === 'EXPIRING_SOON' && <div className="tiny" style={{ color: 'var(--amber)', marginTop: 6 }}>⚠️ {lang === 'en' ? 'Expiring soon — renew to keep access' : '即将到期，请及时续费'}</div>}
+          </div>
+        )}
+
         {/* 今日任务卡片 */}
         <div className="section-title">📋 {t('todayTasks')}</div>
         <div className="card">
