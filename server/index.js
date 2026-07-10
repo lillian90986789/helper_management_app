@@ -63,10 +63,19 @@ const resolveHelperId = (req, raw) => {
 };
 
 // ===== 用户订阅与收费 =====
-const PLANS = {
-  monthly: { plan_id: 'monthly', name: 'Monthly Subscription', name_zh: '月度订阅', price: 5.99, currency: 'SGD', period: 'MONTH', months: 1 },
-  yearly:  { plan_id: 'yearly',  name: 'Yearly Subscription',  name_zh: '年度订阅', price: 59.99, currency: 'SGD', period: 'YEAR', months: 12 },
+// 套餐定义（价格可在管理后台修改，存 AppConfig：price_monthly / price_yearly）
+const PLAN_DEFS = {
+  monthly: { plan_id: 'monthly', name: 'Monthly Subscription', name_zh: '月度订阅', currency: 'SGD', period: 'MONTH', months: 1, default_price: 5.99 },
+  yearly:  { plan_id: 'yearly',  name: 'Yearly Subscription',  name_zh: '年度订阅', currency: 'SGD', period: 'YEAR', months: 12, default_price: 59.99 },
 };
+const planPrice = (id) => {
+  const d = PLAN_DEFS[id]; if (!d) return 0;
+  const c = getConfig('price_' + id);
+  const p = c != null && c !== '' ? +c : d.default_price;
+  return (typeof p === 'number' && p >= 0 && isFinite(p)) ? p : d.default_price;
+};
+const plan = (id) => { const d = PLAN_DEFS[id]; return d ? { ...d, price: planPrice(id) } : null; };
+const PLANS = new Proxy({}, { get: (_, k) => plan(k) });   // 兼容 PLANS[id] 写法，价格实时取
 // 加自然月（末日对齐：1/31 + 1月 → 2/28）
 function addMonths(date, n) {
   const d = new Date(date); const day = d.getDate();
@@ -1420,7 +1429,7 @@ api.post('/notifications/:id/read', (req,res)=>{
 });
 
 // ===================== 订阅：用户侧接口 =====================
-api.get('/subscription/plans', (req, res) => res.json(Object.values(PLANS).map((p) => ({ plan_id: p.plan_id, name: p.name, name_zh: p.name_zh, price: p.price.toFixed(2), currency: p.currency, period: p.period }))));
+api.get('/subscription/plans', (req, res) => res.json(['monthly', 'yearly'].map(plan).map((p) => ({ plan_id: p.plan_id, name: p.name, name_zh: p.name_zh, price: p.price.toFixed(2), currency: p.currency, period: p.period }))));
 api.get('/subscription/current', (req, res) => res.json({ ...subView(req.familyId), paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') }));
 api.post('/subscription/payment-orders', (req, res) => {
   const me = db.prepare('SELECT role FROM User WHERE user_id=?').get(req.userId);
@@ -1557,17 +1566,29 @@ api.get('/admin/users/:id', adminGuard, (req, res) => {
   });
 });
 api.get('/admin/audit', adminGuard, (req, res) => res.json(db.prepare('SELECT * FROM AdminAuditLog ORDER BY audit_log_id DESC LIMIT 200').all()));
-api.get('/admin/config', adminGuard, (req, res) => res.json({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') }));
+const adminConfigView = () => ({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name'), price_monthly: planPrice('monthly').toFixed(2), price_yearly: planPrice('yearly').toFixed(2) });
+api.get('/admin/config', adminGuard, (req, res) => res.json(adminConfigView()));
 api.post('/admin/config', adminGuard, (req, res) => {
   const b = req.body;
   if (b.paynow_name !== undefined) setConfig('paynow_name', b.paynow_name);
+  // 修改套餐价格（对所有用户实时生效，写审计）
+  for (const id of ['monthly', 'yearly']) {
+    const key = 'price_' + id;
+    if (b[key] !== undefined && b[key] !== '' && b[key] !== null) {
+      const v = +b[key];
+      if (!(v >= 0 && v < 100000 && isFinite(v))) return res.status(400).json({ error: 'invalid_price' });
+      const old = planPrice(id);
+      setConfig(key, v.toFixed(2));
+      if (old !== v) audit(req, 'PLAN_PRICE_CHANGED', { old: `${id}:${old}`, new: `${id}:${v.toFixed(2)}` });
+    }
+  }
   if (b.image_base64) {
     const base64 = b.image_base64.replace(/^data:[^;]+;base64,/, ''); const mt = b.media_type || 'image/png';
     const ext = (mt.split('/')[1] || 'png').replace('jpeg', 'jpg'); const fname = `paynow_${Date.now()}.${ext}`;
     try { fs.writeFileSync(join(uploadsDir, fname), Buffer.from(base64, 'base64')); setConfig('paynow_qr_url', `/uploads/${fname}`); }
     catch (e) { return res.status(500).json({ error: 'save_failed' }); }
   } else if (b.paynow_qr_url !== undefined) setConfig('paynow_qr_url', b.paynow_qr_url);
-  res.json({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') });
+  res.json(adminConfigView());
 });
 
 app.use('/api', api);

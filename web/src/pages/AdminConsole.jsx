@@ -155,23 +155,38 @@ function Users() {
 }
 
 function Config() {
-  const [cfg, setCfg] = useState({ paynow_qr_url: '', paynow_name: '' });
+  const [cfg, setCfg] = useState({ paynow_qr_url: '', paynow_name: '', price_monthly: '', price_yearly: '' });
   useEffect(() => { adminApi.getConfig().then(setCfg).catch(() => {}); }, []);
   const onFile = async (e) => {
     const f = e.target.files?.[0]; if (!f) return;
     const dataUrl = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(f); });
     const r = await adminApi.setConfig({ image_base64: dataUrl, media_type: f.type }); setCfg(r); e.target.value = '';
   };
+  const savePrice = async () => {
+    try { const r = await adminApi.setConfig({ price_monthly: cfg.price_monthly, price_yearly: cfg.price_yearly }); setCfg(r); alert('价格已保存，对所有用户实时生效'); }
+    catch (e) { alert('失败：' + (e.code === 'invalid_price' ? '价格无效' : e.code || '')); }
+  };
   const saveName = async () => { const r = await adminApi.setConfig({ paynow_name: cfg.paynow_name }); setCfg(r); alert('已保存'); };
   return (
-    <div className="card" style={{ maxWidth: 480 }}>
-      <div className="bold" style={{ marginBottom: 8 }}>PayNow 收款码设置</div>
-      <div className="tiny muted" style={{ marginBottom: 12 }}>上传你的个人 PayNow 收款二维码（银行 App 里生成的静态收款码），用户付款页会显示它。</div>
-      {cfg.paynow_qr_url && <img src={cfg.paynow_qr_url} alt="qr" style={{ width: 180, height: 180, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 10, display: 'block', marginBottom: 10 }} />}
-      <label className="btn outline" style={{ cursor: 'pointer' }}>📷 上传收款码<input type="file" accept="image/*" style={{ display: 'none' }} onChange={onFile} /></label>
-      <div className="field" style={{ marginTop: 12 }}><label>收款方名称（可选，显示给用户）</label>
-        <input className="input" value={cfg.paynow_name || ''} onChange={(e) => setCfg({ ...cfg, paynow_name: e.target.value })} /></div>
-      <button className="btn primary mt12" onClick={saveName}>保存名称</button>
+    <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
+      <div className="card">
+        <div className="bold" style={{ marginBottom: 8 }}>💵 套餐价格 (S$)</div>
+        <div className="tiny muted" style={{ marginBottom: 12 }}>修改后<b>对所有用户实时生效</b>；已购用户当前周期不受影响，新订单按新价格。</div>
+        <div className="field"><label>月度订阅 /月</label>
+          <input className="input" type="number" step="0.01" min="0" value={cfg.price_monthly || ''} onChange={(e) => setCfg({ ...cfg, price_monthly: e.target.value })} /></div>
+        <div className="field"><label>年度订阅 /年</label>
+          <input className="input" type="number" step="0.01" min="0" value={cfg.price_yearly || ''} onChange={(e) => setCfg({ ...cfg, price_yearly: e.target.value })} /></div>
+        <button className="btn primary mt12" onClick={savePrice}>保存价格</button>
+      </div>
+      <div className="card">
+        <div className="bold" style={{ marginBottom: 8 }}>🏦 PayNow 收款码</div>
+        <div className="tiny muted" style={{ marginBottom: 12 }}>上传你的个人 PayNow 收款二维码，用户付款页会显示它。</div>
+        {cfg.paynow_qr_url && <img src={cfg.paynow_qr_url} alt="qr" style={{ width: 160, height: 160, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 10, display: 'block', marginBottom: 10 }} />}
+        <label className="btn outline" style={{ cursor: 'pointer' }}>📷 上传收款码<input type="file" accept="image/*" style={{ display: 'none' }} onChange={onFile} /></label>
+        <div className="field" style={{ marginTop: 12 }}><label>收款方名称（可选）</label>
+          <input className="input" value={cfg.paynow_name || ''} onChange={(e) => setCfg({ ...cfg, paynow_name: e.target.value })} /></div>
+        <button className="btn primary mt12" onClick={saveName}>保存名称</button>
+      </div>
     </div>
   );
 }
