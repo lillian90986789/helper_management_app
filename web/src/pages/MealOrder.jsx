@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, fmtTime } from '../ui.jsx';
+import { TopBar, StatusBadge, fmtTime, CoverThumb } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function MealOrder() {
@@ -24,7 +24,7 @@ export default function MealOrder() {
       <TopBar title={t('mealOrder')} right={role !== 'maid' ? <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={delMeal} title={lang === 'en' ? 'Remove dish' : '删除菜品'}>🗑️</button> : undefined} />
       <div className="content">
         <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 56 }}>{m.recipe.cover_image}</div>
+          <div style={{ fontSize: 56, display: 'flex', justifyContent: 'center' }}><CoverThumb value={m.recipe.cover_image} imgStyle={{ width: 84, height: 84, borderRadius: 18 }} /></div>
           <div className="bold mt8" style={{ fontSize: 19 }}>{pick(lang, m.recipe.name, m.recipe.name_en)}</div>
           <div className="mt8"><StatusBadge status={m.status} /></div>
           <div className="row mt12" style={{ justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -52,7 +52,7 @@ export default function MealOrder() {
         {/* 完成照片 */}
         {(m.result_image || m.status === 'done') && <>
           <div className="section-title">📷 {t('resultPhoto')}</div>
-          <div className="card"><div className="thumb lg">{m.result_image || m.recipe.cover_image}</div></div>
+          <div className="card"><div className="thumb lg"><CoverThumb value={m.result_image || m.recipe.cover_image} /></div></div>
         </>}
 
         {/* 步骤摘要 */}

@@ -129,7 +129,7 @@ a { color: inherit; text-decoration: none; }
 /* ====== 列表项 ====== */
 .list-item { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .list-item:last-child { border-bottom: none; }
-.thumb { width: 46px; height: 46px; border-radius: 13px; background: var(--teal-l); display: grid; place-items: center; font-size: 24px; flex: none; }
+.thumb { width: 46px; height: 46px; border-radius: 13px; background: var(--teal-l); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 24px; flex: none; }
 .thumb.lg { width: 64px; height: 64px; font-size: 34px; border-radius: 16px; }
 .checkrow { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .checkbox { width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--line); display: grid; place-items: center; flex: none; color: #fff; font-size: 13px; }

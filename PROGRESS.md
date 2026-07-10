@@ -84,6 +84,12 @@
   - 前端 `RestDaySettings.jsx`：加载家庭内所有女佣，家庭有多名女佣时显示「为哪位女佣设置」chips 选择器；切换后按该女佣加载其休息日（`api.month(y,m,helper.user_id)`）；保存已带 `helper_id`（原本就有）。
 - 测试 `test_restday_notify_target.mjs`（7/7）：为A设休息日→A收到、B收不到、通知 to_user_id=A；群发两人都收到。回归 14/14、7/7、8/8。
 
+### 2026-07-11 菜谱图片统一裁剪（竖图冲出方框修复）
+- **现象**：女佣首页「今日做饭」和菜谱列表里，竖图（如排骨汤）冲出缩略图方框。
+- **根因**：`.thumb` 用 `display:grid; place-items:center` 且无 `overflow:hidden`，竖图 `height:100%` 在 grid auto 行里解析失败→回退成原始高度撑破容器。
+- **改法**：`styles.css` 的 `.thumb` 改为 `display:flex; align-items/justify center; overflow:hidden`（`.thumb.lg` 继承）→ `height:100%` 正确解析成固定高度，`object-fit:cover` 真正裁成统一方形。
+- 顺带修 `MealOrder.jsx` 两处直接把 `cover_image` 当文本渲染（上传图会显示成 URL 文字）→ 改用 `CoverThumb`。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）
