@@ -1495,6 +1495,16 @@ api.post('/admin/orders/:order_no/reject', adminGuard, (req, res) => {
   audit(req, 'PAYMENT_REJECTED', { family_id: o.family_id, order_id: o.payment_order_id, reason: req.body.reason });
   res.json({ ok: true });
 });
+// 修改某订单的实收金额（打折/更正）——已开通订单改后收入统计同步更正
+api.post('/admin/orders/:order_no/amount', adminGuard, (req, res) => {
+  const o = db.prepare('SELECT * FROM PaymentOrder WHERE order_no=?').get(req.params.order_no);
+  if (!o) return res.status(404).json({ error: 'not found' });
+  const amt = +req.body.amount;
+  if (!(amt >= 0 && amt < 100000 && isFinite(amt))) return res.status(400).json({ error: 'invalid_amount' });
+  db.prepare("UPDATE PaymentOrder SET amount=?, note=COALESCE(NULLIF(?,''),note), updated_at=datetime('now') WHERE payment_order_id=?").run(amt, req.body.reason || '', o.payment_order_id);
+  audit(req, 'ORDER_AMOUNT_ADJUSTED', { family_id: o.family_id, user_id: o.payer_user_id, order_id: o.payment_order_id, old: (+o.amount).toFixed(2), new: amt.toFixed(2), reason: req.body.reason });
+  res.json({ ok: true, order_no: o.order_no, amount: amt.toFixed(2) });
+});
 api.get('/admin/subscriptions', adminGuard, (req, res) => {
   const fams = db.prepare(`SELECT f.family_id, f.family_name,
       (SELECT u.name FROM FamilyMember fm JOIN User u ON u.user_id=fm.user_id WHERE fm.family_id=f.family_id AND fm.role='employer' AND fm.status='active' ORDER BY fm.family_member_id LIMIT 1) owner_name

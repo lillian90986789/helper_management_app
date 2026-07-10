@@ -69,6 +69,11 @@ function Orders() {
   useEffect(() => { load(); }, [filter]);
   const confirm = async (no) => { if (!window.confirm('确认已收到该笔款项并开通订阅？')) return; try { await adminApi.confirmOrder(no); load(); } catch (e) { alert('失败: ' + e.code); } };
   const reject = async (no) => { const r = prompt('拒绝原因（可空）', ''); if (r === null) return; try { await adminApi.rejectOrder(no, r); load(); } catch {} };
+  const setAmt = async (o) => {
+    const v = prompt(`修改实收金额（打折/更正）\n当前 S$${(+o.amount).toFixed(2)}，改后收入统计会同步`, (+o.amount).toFixed(2));
+    if (v === null) return; const reason = prompt('原因（如：老友8折）', '') || '';
+    try { await adminApi.setOrderAmount(o.order_no, +v, reason); load(); } catch (e) { alert('失败：' + (e.code === 'invalid_amount' ? '金额无效' : e.code || '')); }
+  };
   return (
     <div>
       <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible', marginBottom: 10 }}>
@@ -84,9 +89,10 @@ function Orders() {
               <td style={td}>{o.plan_id}</td><td style={td}>{money(o.amount)}</td>
               <td style={td}><span className={'badge ' + (o.status === 'PAID' ? 'green' : o.status === 'SUBMITTED' ? 'amber' : o.status === 'CANCELLED' ? 'red' : 'gray')}>{o.status}</span></td>
               <td style={td}>{(o.created_at || '').slice(0, 16)}</td>
-              <td style={td}>{['PENDING', 'SUBMITTED'].includes(o.status)
-                ? <><button className="btn sm primary" onClick={() => confirm(o.order_no)}>确认开通</button> <button className="btn sm outline" onClick={() => reject(o.order_no)}>拒绝</button></>
-                : '-'}</td>
+              <td style={td}>
+                {['PENDING', 'SUBMITTED'].includes(o.status) && <><button className="btn sm primary" onClick={() => confirm(o.order_no)}>确认开通</button> <button className="btn sm outline" onClick={() => reject(o.order_no)}>拒绝</button> </>}
+                <button className="btn sm outline" onClick={() => setAmt(o)}>改金额</button>
+              </td>
             </tr>
           ))}
           {rows.length === 0 && <tr><td style={td} colSpan={8}>无订单</td></tr>}

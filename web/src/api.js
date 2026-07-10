@@ -58,6 +58,7 @@ export const adminApi = {
   orders: (status) => areq('/admin/orders' + (status ? '?status=' + status : '')),
   confirmOrder: (no) => areq(`/admin/orders/${no}/confirm`, { method: 'POST' }),
   rejectOrder: (no, reason) => areq(`/admin/orders/${no}/reject`, { method: 'POST', body: { reason } }),
+  setOrderAmount: (no, amount, reason) => areq(`/admin/orders/${no}/amount`, { method: 'POST', body: { amount, reason } }),
   subscriptions: (status) => areq('/admin/subscriptions' + (status ? '?status=' + status : '')),
   extend: (fid, body) => areq(`/admin/families/${fid}/extend`, { method: 'POST', body }),
   lock: (fid, reason) => areq(`/admin/families/${fid}/lock`, { method: 'POST', body: { reason } }),
