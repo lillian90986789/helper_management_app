@@ -194,28 +194,40 @@ function Users() {
 }
 
 function Config() {
-  const [cfg, setCfg] = useState({ paynow_qr_url: '', paynow_name: '', price_monthly: '', price_yearly: '' });
+  const [cfg, setCfg] = useState({});
   useEffect(() => { adminApi.getConfig().then(setCfg).catch(() => {}); }, []);
+  const set = (k, v) => setCfg((p) => ({ ...p, [k]: v }));
   const onFile = async (e) => {
     const f = e.target.files?.[0]; if (!f) return;
     const dataUrl = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(f); });
     const r = await adminApi.setConfig({ image_base64: dataUrl, media_type: f.type }); setCfg(r); e.target.value = '';
   };
   const savePrice = async () => {
-    try { const r = await adminApi.setConfig({ price_monthly: cfg.price_monthly, price_yearly: cfg.price_yearly }); setCfg(r); alert('价格已保存，对所有用户实时生效'); }
-    catch (e) { alert('失败：' + (e.code === 'invalid_price' ? '价格无效' : e.code || '')); }
+    try { const r = await adminApi.setConfig({ orig_monthly: cfg.orig_monthly, disc_monthly: cfg.disc_monthly, orig_yearly: cfg.orig_yearly, disc_yearly: cfg.disc_yearly, promo_text: cfg.promo_text }); setCfg(r); alert('已保存，对所有用户实时生效'); }
+    catch (e) { alert('失败：' + (e.code === 'invalid_price' ? '价格无效' : e.code === 'invalid_discount' ? '折扣需 0–100' : e.code || '')); }
   };
   const saveName = async () => { const r = await adminApi.setConfig({ paynow_name: cfg.paynow_name }); setCfg(r); alert('已保存'); };
+  const finalPrice = (o, d) => { const p = (+o || 0) * (1 - (+d || 0) / 100); return isFinite(p) ? p.toFixed(2) : '—'; };
   return (
-    <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
+    <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))' }}>
       <div className="card">
-        <div className="bold" style={{ marginBottom: 8 }}>💵 套餐价格 (S$)</div>
-        <div className="tiny muted" style={{ marginBottom: 12 }}>修改后<b>对所有用户实时生效</b>；已购用户当前周期不受影响，新订单按新价格。</div>
-        <div className="field"><label>月度订阅 /月</label>
-          <input className="input" type="number" step="0.01" min="0" value={cfg.price_monthly || ''} onChange={(e) => setCfg({ ...cfg, price_monthly: e.target.value })} /></div>
-        <div className="field"><label>年度订阅 /年</label>
-          <input className="input" type="number" step="0.01" min="0" value={cfg.price_yearly || ''} onChange={(e) => setCfg({ ...cfg, price_yearly: e.target.value })} /></div>
-        <button className="btn primary mt12" onClick={savePrice}>保存价格</button>
+        <div className="bold" style={{ marginBottom: 8 }}>💵 套餐价格与折扣 (S$)</div>
+        <div className="tiny muted" style={{ marginBottom: 12 }}>设原价与折扣%，用户看到<b>原价划掉、折后价加粗</b>；实收=折后价。修改<b>对所有用户实时生效</b>，已购用户当前周期不变。</div>
+        {[['monthly', '月度订阅 /月'], ['yearly', '年度订阅 /年']].map(([id, lbl]) => (
+          <div key={id} style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginTop: 6 }}>
+            <div className="bold small" style={{ marginBottom: 6 }}>{lbl}</div>
+            <div className="row" style={{ gap: 8 }}>
+              <div className="field grow" style={{ margin: 0 }}><label>原价</label>
+                <input className="input" type="number" step="0.01" min="0" value={cfg['orig_' + id] ?? ''} onChange={(e) => set('orig_' + id, e.target.value)} /></div>
+              <div className="field grow" style={{ margin: 0 }}><label>折扣 % off</label>
+                <input className="input" type="number" step="1" min="0" max="100" value={cfg['disc_' + id] ?? ''} onChange={(e) => set('disc_' + id, e.target.value)} /></div>
+            </div>
+            <div className="tiny muted mt4">实收价：<b style={{ color: 'var(--teal)' }}>S${finalPrice(cfg['orig_' + id], cfg['disc_' + id])}</b>{+cfg['disc_' + id] > 0 && <> （原价 <span style={{ textDecoration: 'line-through' }}>S${(+cfg['orig_' + id] || 0).toFixed(2)}</span>）</>}</div>
+          </div>
+        ))}
+        <div className="field" style={{ marginTop: 12 }}><label>促销文案（如「限时折扣，8折优惠」，留空则不显示）</label>
+          <input className="input" value={cfg.promo_text ?? ''} maxLength={120} placeholder="限时折扣 · 新用户首月立减" onChange={(e) => set('promo_text', e.target.value)} /></div>
+        <button className="btn primary mt12" onClick={savePrice}>保存价格 / 折扣 / 文案</button>
       </div>
       <div className="card">
         <div className="bold" style={{ marginBottom: 8 }}>🏦 PayNow 收款码</div>

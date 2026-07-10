@@ -68,13 +68,19 @@ const PLAN_DEFS = {
   monthly: { plan_id: 'monthly', name: 'Monthly Subscription', name_zh: '月度订阅', currency: 'SGD', period: 'MONTH', months: 1, default_price: 5.99 },
   yearly:  { plan_id: 'yearly',  name: 'Yearly Subscription',  name_zh: '年度订阅', currency: 'SGD', period: 'YEAR', months: 12, default_price: 59.99 },
 };
-const planPrice = (id) => {
+const planOrig = (id) => {
   const d = PLAN_DEFS[id]; if (!d) return 0;
-  const c = getConfig('price_' + id);
+  const c = getConfig('orig_' + id);
   const p = c != null && c !== '' ? +c : d.default_price;
-  return (typeof p === 'number' && p >= 0 && isFinite(p)) ? p : d.default_price;
+  return (p >= 0 && isFinite(p)) ? p : d.default_price;
 };
-const plan = (id) => { const d = PLAN_DEFS[id]; return d ? { ...d, price: planPrice(id) } : null; };
+const planDiscount = (id) => {   // 折扣百分比（% off），0=无折扣
+  const c = getConfig('disc_' + id);
+  const p = c != null && c !== '' ? +c : 0;
+  return (p >= 0 && p <= 100 && isFinite(p)) ? p : 0;
+};
+const planPrice = (id) => +(planOrig(id) * (1 - planDiscount(id) / 100)).toFixed(2);   // 实收价（折后）
+const plan = (id) => { const d = PLAN_DEFS[id]; return d ? { ...d, original_price: planOrig(id), discount_percent: planDiscount(id), price: planPrice(id) } : null; };
 const PLANS = new Proxy({}, { get: (_, k) => plan(k) });   // 兼容 PLANS[id] 写法，价格实时取
 // 加自然月（末日对齐：1/31 + 1月 → 2/28）
 function addMonths(date, n) {
@@ -1429,7 +1435,11 @@ api.post('/notifications/:id/read', (req,res)=>{
 });
 
 // ===================== 订阅：用户侧接口 =====================
-api.get('/subscription/plans', (req, res) => res.json(['monthly', 'yearly'].map(plan).map((p) => ({ plan_id: p.plan_id, name: p.name, name_zh: p.name_zh, price: p.price.toFixed(2), currency: p.currency, period: p.period }))));
+api.get('/subscription/plans', (req, res) => res.json({
+  promo_text: getConfig('promo_text') || '',
+  plans: ['monthly', 'yearly'].map(plan).map((p) => ({ plan_id: p.plan_id, name: p.name, name_zh: p.name_zh,
+    original_price: p.original_price.toFixed(2), discount_percent: p.discount_percent, price: p.price.toFixed(2), currency: p.currency, period: p.period })),
+}));
 api.get('/subscription/current', (req, res) => res.json({ ...subView(req.familyId), paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name') }));
 api.post('/subscription/payment-orders', (req, res) => {
   const me = db.prepare('SELECT role FROM User WHERE user_id=?').get(req.userId);
@@ -1576,20 +1586,28 @@ api.get('/admin/users/:id', adminGuard, (req, res) => {
   });
 });
 api.get('/admin/audit', adminGuard, (req, res) => res.json(db.prepare('SELECT * FROM AdminAuditLog ORDER BY audit_log_id DESC LIMIT 200').all()));
-const adminConfigView = () => ({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name'), price_monthly: planPrice('monthly').toFixed(2), price_yearly: planPrice('yearly').toFixed(2) });
+const adminConfigView = () => ({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name'), promo_text: getConfig('promo_text') || '',
+  orig_monthly: planOrig('monthly').toFixed(2), disc_monthly: planDiscount('monthly'), price_monthly: planPrice('monthly').toFixed(2),
+  orig_yearly: planOrig('yearly').toFixed(2), disc_yearly: planDiscount('yearly'), price_yearly: planPrice('yearly').toFixed(2) });
 api.get('/admin/config', adminGuard, (req, res) => res.json(adminConfigView()));
 api.post('/admin/config', adminGuard, (req, res) => {
   const b = req.body;
   if (b.paynow_name !== undefined) setConfig('paynow_name', b.paynow_name);
-  // 修改套餐价格（对所有用户实时生效，写审计）
+  if (b.promo_text !== undefined) setConfig('promo_text', String(b.promo_text).slice(0, 120));   // 限时折扣等文案
+  // 修改套餐原价 + 折扣（对所有用户实时生效，写审计）
   for (const id of ['monthly', 'yearly']) {
-    const key = 'price_' + id;
-    if (b[key] !== undefined && b[key] !== '' && b[key] !== null) {
-      const v = +b[key];
+    const ok = 'orig_' + id, dk = 'disc_' + id;
+    if (b[ok] !== undefined && b[ok] !== '' && b[ok] !== null) {
+      const v = +b[ok];
       if (!(v >= 0 && v < 100000 && isFinite(v))) return res.status(400).json({ error: 'invalid_price' });
-      const old = planPrice(id);
-      setConfig(key, v.toFixed(2));
-      if (old !== v) audit(req, 'PLAN_PRICE_CHANGED', { old: `${id}:${old}`, new: `${id}:${v.toFixed(2)}` });
+      const old = planOrig(id); setConfig(ok, v.toFixed(2));
+      if (old !== v) audit(req, 'PLAN_PRICE_CHANGED', { old: `${id}orig:${old}`, new: `${id}orig:${v.toFixed(2)}` });
+    }
+    if (b[dk] !== undefined && b[dk] !== '' && b[dk] !== null) {
+      const v = +b[dk];
+      if (!(v >= 0 && v <= 100 && isFinite(v))) return res.status(400).json({ error: 'invalid_discount' });
+      const old = planDiscount(id); setConfig(dk, String(v));
+      if (old !== v) audit(req, 'PLAN_DISCOUNT_CHANGED', { old: `${id}:${old}%`, new: `${id}:${v}%` });
     }
   }
   if (b.image_base64) {
