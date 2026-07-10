@@ -9,7 +9,7 @@ export default function EmployerHome() {
   const nav = useNavigate();
   const { data, reload } = useAsync(() => api.dashEmployer());
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
-  const { summary, meals, shoppingSummary, notifications, activity, family } = data;
+  const { summary, meals, shoppingSummary, notifications, family } = data;
   const unread = notifications.filter((n) => !n.is_read).length;
   const delMeal = async (e, m) => {
     e.stopPropagation();
@@ -91,19 +91,6 @@ export default function EmployerHome() {
             ))}
           </div>
         </>}
-
-        {/* 最新动态 */}
-        <div className="section-title">🕑 {t('activity')}</div>
-        <div className="card">
-          <div className="tl">
-            {activity.map((a) => (
-              <div key={a.log_id} className="tl-item">
-                <div className="small"><b>{a.actor_name}</b> {a.action} · <span className="muted">{a.task_title}</span></div>
-                <div className="tiny muted">{fmtTime(a.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </>
   );

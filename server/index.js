@@ -773,9 +773,8 @@ api.get('/dashboard/employer', (req, res) => {
     actual_total: items.reduce((s,i)=> s + (i.actual_total||0), 0),
   };
   const notifications = db.prepare("SELECT * FROM Notification WHERE family_id=? AND to_role IN ('employer') ORDER BY notification_id DESC LIMIT 6").all(famId(req));
-  const activity = db.prepare('SELECT l.*, t.task_name_snapshot task_title, u.name actor_name FROM DailyTaskLog l JOIN DailyTask t ON t.daily_task_id=l.daily_task_id LEFT JOIN User u ON u.user_id=l.actor_id ORDER BY l.log_id DESC LIMIT 6').all();
   const family = curFamily(req);
-  res.json({ summary, meals, shopping, shoppingSummary, notifications, activity, family });
+  res.json({ summary, meals, shopping, shoppingSummary, notifications, family });
 });
 api.get('/dashboard/maid', (req, res) => {
   const date = todayYmd();
