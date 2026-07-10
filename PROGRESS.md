@@ -39,6 +39,12 @@
    - `cleanupInactiveAccounts()`（app.listen 前）：超 3 个月未活跃 → `account_status='removed'` + `email=NULL` + 移出家庭；**业务数据保留**；启动跑一次 + 每 24h 跑一次。清空后该 Gmail 可重新注册。
    - 已用真实 sqlite 断言测试：删成员/禁删自己/last_login 记录/3月清理/活跃账号不受影响，全部通过。
 
+### 2026-07-11 后台删用户同步 + 女佣加入按钮修复
+- **雇主删女佣后后台仍显示**：`/admin/users` 从 User 表 LEFT JOIN，removed 的行还在，且前端没展示 account_status → 看起来没删。改：`/admin/users` **默认排除 `account_status='removed'`**（带 `include_removed=1` 才列出）；AdminConsole 加「状态」列(正常/已注销 badge) + 「显示已注销」开关。
+- **管理员删除用户**：新增 `POST /api/admin/users/:id/delete`（软删除：removed + 释放邮箱 + 移出家庭 + 写审计 USER_DELETED），`adminApi.deleteUser` 已加。**注意：AdminConsole 里还没放删除按钮**（用户中途喊停），需要时再接 UI。
+- **女佣加入页没有登录按钮**（回归）：之前「加入」按钮只在 `!googleReady` 时渲染，配了 client_id 但 GSI 没画出按钮时就没有可点入口。改：**任何情况下 actionbar 都渲染「加入家庭」按钮**（Google 未配→primary；已配→outline，Google 按钮作推荐入口并存），姓名字段常显，永不锁死。
+- 测试：`test_admin_delete_sync.mjs`（端到端 12/12）雇主删女佣→后台默认隐藏/include_removed 显示/管理员删除+审计。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

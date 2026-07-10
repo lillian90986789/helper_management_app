@@ -1739,6 +1739,8 @@ api.get('/admin/users', adminGuard, (req, res) => {
   const args = []; const where = [];
   if (kw) { where.push('(u.name LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR f.family_name LIKE ? OR CAST(u.user_id AS TEXT)=?)'); args.push(`%${kw}%`, `%${kw}%`, `%${kw}%`, `%${kw}%`, kw); }
   if (req.query.role) { where.push('u.role=?'); args.push(req.query.role); }
+  // 默认不显示已注销账号（雇主删女佣/管理员删用户后后台同步隐藏）；需审计时带 include_removed=1 才列出
+  if (req.query.include_removed !== '1') where.push("COALESCE(u.account_status,'active') <> 'removed'");
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY u.user_id DESC LIMIT 200';
   res.json(db.prepare(sql).all(...args).map((u) => {
@@ -1763,6 +1765,20 @@ api.get('/admin/users/:id', adminGuard, (req, res) => {
     subscription: fm ? subView(fm.family_id) : null,
     personal_paid: userPaid(u.user_id).s, family_paid: fm ? familyPaid(fm.family_id).s : 0, orders,
   });
+});
+// 管理员删除用户（软删除，与 /members/:id/remove 一致）：标记 removed + 释放邮箱(可重注册) + 移出所有家庭；
+// 业务数据保留；账号从此无法登录（成员记录 removed → 无 family → 401）。写审计。
+api.post('/admin/users/:id/delete', adminGuard, (req, res) => {
+  const u = db.prepare('SELECT * FROM User WHERE user_id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  if ((u.account_status || 'active') === 'removed') return res.json({ ok: true, already: true, user_id: u.user_id, account_status: 'removed' });
+  const fams = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active'").all(u.user_id).map((r) => r.family_id);
+  db.transaction(() => {
+    db.prepare("UPDATE FamilyMember SET status='removed' WHERE user_id=? AND status='active'").run(u.user_id);
+    db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now') WHERE user_id=?").run(u.user_id);
+  })();
+  audit(req, 'USER_DELETED', { user_id: u.user_id, family_id: fams[0] ?? null, old: u.account_status || 'active', new: 'removed', reason: req.body?.reason });
+  res.json({ ok: true, user_id: u.user_id, account_status: 'removed' });
 });
 api.get('/admin/audit', adminGuard, (req, res) => res.json(db.prepare('SELECT * FROM AdminAuditLog ORDER BY audit_log_id DESC LIMIT 200').all()));
 const adminConfigView = () => ({ paynow_qr_url: getConfig('paynow_qr_url'), paynow_name: getConfig('paynow_name'), promo_text: getConfig('promo_text') || '',

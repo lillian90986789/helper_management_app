@@ -124,33 +124,31 @@ export default function JoinPage() {
           </div>
         </div>
 
-        {/* 主路径：用 Google 加入（以 Gmail 唯一识别女佣） */}
+        {/* 推荐：用 Google 加入（以 Gmail 唯一识别女佣，重进不再新建账号） */}
         {googleReady && (
           <div style={{ marginTop: 12 }}>
-            <div className="muted small" style={{ marginBottom: 8 }}>{tt('用 Google 账号加入（同一 Gmail 始终是同一个你）', 'Join with Google — the same Gmail is always the same you')}</div>
+            <div className="muted small" style={{ marginBottom: 8 }}>{tt('推荐用 Google 加入（同一 Gmail 始终是同一个你）', 'Recommended: join with Google — the same Gmail is always the same you')}</div>
             <div ref={gbtn} style={{ display: 'flex', justifyContent: 'center', opacity: busy ? 0.5 : 1, pointerEvents: busy ? 'none' : 'auto' }} />
+            <div className="row" style={{ alignItems: 'center', gap: 8, margin: '14px 0 2px' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--line,#e5e7eb)' }} />
+              <span className="tiny muted">{tt('或用姓名加入', 'or join with your name')}</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--line,#e5e7eb)' }} />
+            </div>
           </div>
         )}
 
-        {/* 回退：本环境未启用 Google → 邀请码 + 姓名 */}
-        {!googleReady && (
-          <>
-            <div className="field">
-              <label>{tt('你的姓名', 'Your name')} <span className="req">*</span></label>
-              <input className="input" value={name} placeholder={tt('例如 Siti', 'e.g. Siti')} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="tiny muted" style={{ marginTop: 6 }}>{tt('（本环境未启用 Google，暂用姓名加入）', '(Google not enabled here — join with your name for now)')}</div>
-          </>
-        )}
+        {/* 姓名加入（始终可用，避免 Google 未画出/未配置时锁死） */}
+        <div className="field">
+          <label>{tt('你的姓名', 'Your name')} <span className="req">*</span></label>
+          <input className="input" value={name} placeholder={tt('例如 Siti', 'e.g. Siti')} onChange={(e) => setName(e.target.value)} />
+        </div>
 
         <div className="hint" style={{ marginTop: 12 }}>🔑 {tt('邀请码由雇主在「女佣管理」页生成并提供给你', 'Ask your employer for the code from Helper Management')}</div>
       </div>
 
-      {!googleReady && (
-        <div className="actionbar">
-          <button className="btn primary block" disabled={busy} onClick={submitLegacy}>{busy ? '…' : tt('加入家庭', 'Join family')}</button>
-        </div>
-      )}
+      <div className="actionbar">
+        <button className={'btn block ' + (googleReady ? 'outline' : 'primary')} disabled={busy} onClick={submitLegacy}>{busy ? '…' : tt('加入家庭', 'Join family')}</button>
+      </div>
     </>
   );
 }

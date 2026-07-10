@@ -160,8 +160,9 @@ function MultiFilter({ label, options, value, onChange, searchable }) {
 function Users() {
   const [rows, setRows] = useState([]); const [kw, setKw] = useState('');
   const [roleF, setRoleF] = useState([]); const [nameF, setNameF] = useState([]);
-  const load = () => adminApi.users(kw || undefined).then(setRows).catch(() => {});
-  useEffect(() => { load(); }, []);
+  const [showRemoved, setShowRemoved] = useState(false);
+  const load = () => adminApi.users(kw || undefined, showRemoved).then(setRows).catch(() => {});
+  useEffect(() => { load(); }, [showRemoved]);
   const names = [...new Set(rows.map((u) => u.name).filter(Boolean))];
   const filtered = rows.filter((u) => (roleF.length === 0 || roleF.includes(u.role)) && (nameF.length === 0 || nameF.includes(u.name)));
   return (
@@ -172,23 +173,29 @@ function Users() {
         <span className="tiny muted">筛选:</span>
         <MultiFilter label="角色" options={['employer', 'maid', 'member']} value={roleF} onChange={setRoleF} />
         <MultiFilter label="姓名" options={names} value={nameF} onChange={setNameF} searchable />
+        <label className="tiny muted" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+          <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} /> 显示已注销
+        </label>
         {(roleF.length > 0 || nameF.length > 0) && <span className="tiny muted">已筛出 {filtered.length} / {rows.length}</span>}
       </div>
       <Scroll><table style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <thead><tr>{['ID', '姓名', '角色', '手机/邮箱', '家庭', '订阅', '到期', '个人付费', '最后登录'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+        <thead><tr>{['ID', '姓名', '角色', '状态', '手机/邮箱', '家庭', '订阅', '到期', '个人付费', '最后登录'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
         <tbody>
-          {filtered.map((u) => (
-            <tr key={u.user_id}>
+          {filtered.map((u) => {
+            const removed = (u.account_status || 'active') === 'removed';
+            return (
+            <tr key={u.user_id} style={removed ? { opacity: 0.55 } : undefined}>
               <td style={td}>{u.user_id}</td><td style={td}>{u.name}</td>
               <td style={td}>{u.role === 'employer' ? '雇主' : u.role === 'maid' ? '女佣' : u.role === 'member' ? '家庭成员' : u.role}</td>
+              <td style={td}>{removed ? <span className="badge red">已注销</span> : <span className="badge green">正常</span>}</td>
               <td style={td}>{u.email || u.phone || '-'}</td><td style={td}>{u.family_name || '-'}</td>
               <td style={td}>{u.sub_status ? <span className={'badge ' + (u.sub_status === 'EXPIRED' ? 'red' : u.sub_status === 'TRIAL_ACTIVE' ? 'blue' : 'green')}>{u.sub_status}</span> : '-'}</td>
               <td style={td}>{(u.expire_at || '').slice(0, 10)}</td><td style={td}>{money(u.personal_paid)}</td><td style={td}>{(u.last_login_at || '').slice(0, 16)}</td>
             </tr>
-          ))}
+          ); })}
         </tbody>
       </table></Scroll>
-      <div className="tiny muted mt8">🔒 手机号/邮箱已脱敏；后台不存储、不显示任何明文密码。</div>
+      <div className="tiny muted mt8">🔒 手机号/邮箱已脱敏；后台不存储、不显示任何明文密码。默认不显示已注销账号，勾选「显示已注销」可查看。</div>
     </div>
   );
 }
