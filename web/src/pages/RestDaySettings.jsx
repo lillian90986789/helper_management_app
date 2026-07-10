@@ -78,17 +78,20 @@ export default function RestDaySettings() {
     <>
       <TopBar title={t('restDaySettings')} sub={helper ? `${helper.avatar} ${helper.name}` : ''} />
       <div className="content">
-        {/* 选择为哪位女佣设置休息日（多名女佣时显示；设置后只有该女佣收到通知） */}
-        {helpers.length > 1 && (
-          <div style={{ marginBottom: 10 }}>
-            <div className="tiny muted" style={{ marginBottom: 4 }}>👩🏽‍🦱 {en ? 'Set rest day for' : '为哪位女佣设置'}</div>
+        {/* 选择为哪位女佣设置休息日（始终显示；设置后只有该女佣收到通知） */}
+        <div className="card" style={{ padding: '12px 14px', marginBottom: 12 }}>
+          <div className="bold small" style={{ marginBottom: 8 }}>👩🏽‍🦱 {en ? 'Set rest day for' : '为哪位女佣设置休息日'}</div>
+          {helpers.length === 0 ? (
+            <div className="tiny muted">{en ? 'No helper yet — invite one in Helper Management first.' : '还没有女佣，请先在「女佣管理」邀请女佣。'}</div>
+          ) : (
             <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
               {helpers.map((h) => (
                 <button key={h.user_id} className={'chip' + (helper?.user_id === h.user_id ? ' on' : '')} onClick={() => setHelper(h)}>{h.avatar} {h.name}</button>
               ))}
             </div>
-          </div>
-        )}
+          )}
+          {helpers.length > 1 && <div className="tiny muted" style={{ marginTop: 8 }}>{en ? 'Pick a helper, then set their rest days below. Only that helper is notified.' : '选中某位女佣后，在下方日历为她设置休息日；只有该女佣会收到通知。'}</div>}
+        </div>
 
         {/* 月份导航 */}
         <div className="spread" style={{ marginBottom: 8 }}>

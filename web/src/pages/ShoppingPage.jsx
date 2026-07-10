@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, fmtTime, Empty } from '../ui.jsx';
+import { TopBar, StatusBadge, fmtTime, Empty, isImgAvatar } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 const GROUPS = ['to_buy', 'bought', 'out_of_stock', 'sub_requested'];
@@ -148,7 +148,11 @@ function ShoppingDetail() {
         {/* 小票 */}
         {l.receipt_image && <>
           <div className="section-title">🧾 {lang === 'en' ? 'Receipt' : '小票'}</div>
-          <div className="card"><div className="thumb lg">{l.receipt_image}</div>
+          <div className="card">
+            {isImgAvatar(l.receipt_image)
+              ? <img src={l.receipt_image} alt="receipt" onClick={() => window.open(l.receipt_image, '_blank')}
+                  style={{ maxWidth: '100%', maxHeight: 340, borderRadius: 10, cursor: 'zoom-in', display: 'block' }} />
+              : <div className="thumb lg">{l.receipt_image}</div>}
             {l.payment_method && <div className="small muted mt8">{l.payment_method}</div>}
           </div>
         </>}
