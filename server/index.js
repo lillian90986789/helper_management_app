@@ -21,7 +21,9 @@ const api = express.Router();
 // ===== 多租户：识别当前登录用户所属的家庭 =====
 // 前端每个请求带 X-User-Id 头；据此解析该用户所在家庭，做数据隔离。
 api.use((req, res, next) => {
-  const uid = +req.headers['x-user-id'] || 0;
+  // 只信任签名令牌（X-Auth-Token / Authorization: Bearer），不再相信明文 X-User-Id
+  const raw = req.headers['x-auth-token'] || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+  const uid = verifyToken(raw);
   if (uid) {
     const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(uid);
     if (fm) { req.userId = uid; req.familyId = fm.family_id; }
@@ -75,6 +77,27 @@ function addMonths(date, n) {
 const getConfig = (k) => { const r = db.prepare('SELECT config_value FROM AppConfig WHERE config_key=?').get(k); return r ? r.config_value : null; };
 const setConfig = (k, v) => db.prepare(`INSERT INTO AppConfig (config_key,config_value,updated_at) VALUES (?,?,datetime('now'))
   ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, updated_at=datetime('now')`).run(k, String(v ?? ''));
+// ===== 登录令牌（HMAC 签名，防止伪造 X-User-Id 冒充他人）=====
+let _authSecret = null;
+function authSecret() {
+  if (_authSecret) return _authSecret;
+  _authSecret = process.env.AUTH_SECRET || getConfig('auth_secret');
+  if (!_authSecret) { _authSecret = crypto.randomBytes(32).toString('hex'); setConfig('auth_secret', _authSecret); }
+  return _authSecret;
+}
+function signToken(userId) {
+  const p = String(userId);
+  return p + '.' + crypto.createHmac('sha256', authSecret()).update(p).digest('hex');
+}
+function verifyToken(token) {
+  if (!token || typeof token !== 'string') return 0;
+  const i = token.indexOf('.'); if (i < 0) return 0;
+  const p = token.slice(0, i), sig = token.slice(i + 1);
+  const expect = crypto.createHmac('sha256', authSecret()).update(p).digest('hex');
+  if (sig.length !== expect.length) return 0;
+  try { if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return 0; } catch { return 0; }
+  const uid = +p; return Number.isInteger(uid) && uid > 0 ? uid : 0;
+}
 // 无订阅记录则新建 1 个自然月免费试用（注册时/存量家庭首次访问时）
 function ensureSubscription(familyId) {
   let s = db.prepare('SELECT * FROM FamilySubscription WHERE family_id=?').get(familyId);
@@ -202,7 +225,7 @@ api.post('/auth/google', async (req, res) => {
     family = fm ? db.prepare('SELECT * FROM Family WHERE family_id=?').get(fm.family_id) : createEmptyFamily((u.name || 'My') + ' 的家');
     if (!fm) db.prepare("INSERT INTO FamilyMember (family_id, user_id, role, permissions, status) VALUES (?,?,?,?,?)").run(family.family_id, u.user_id, 'employer', 'owner', 'active');
   }
-  res.json({ ok: true, is_new: isNew, user: { user_id: u.user_id, name: u.name, avatar: u.avatar, email },
+  res.json({ ok: true, token: signToken(u.user_id), is_new: isNew, user: { user_id: u.user_id, name: u.name, avatar: u.avatar, email },
     family: { family_id: family.family_id, family_name: family.family_name } });
 });
 
@@ -258,7 +281,7 @@ api.post('/join', (req, res) => {
     .run(name.trim(), avatar, 'maid', preferred_language, 'active').lastInsertRowid;
   db.prepare(`INSERT INTO FamilyMember (family_id, user_id, role, status) VALUES (?,?,?,?)`).run(family.family_id, uid, 'maid', 'active');
   notify(family.family_id, 'system', '女佣加入家庭', `${name} 通过邀请码加入`, 'member', uid, 'employer');
-  res.json({ user_id: uid, family_id: family.family_id, family_name: family.family_name, name: name.trim(), avatar });
+  res.json({ token: signToken(uid), user_id: uid, family_id: family.family_id, family_name: family.family_name, name: name.trim(), avatar });
 });
 // 更新用户资料（姓名 / 称呼 / 头像 / 性别 / 出生日期）——雇主、女佣、家庭成员通用
 api.patch('/users/:id', (req, res) => {
@@ -488,7 +511,7 @@ api.post('/auth/employer/register', (req, res) => {
   });
   let r; try { r = tx(); } catch (e) { return res.status(500).json({ error: 'register_failed', detail: String(e.message || e) }); }
   const user = db.prepare('SELECT user_id,name,avatar,role,username FROM User WHERE user_id=?').get(r.uid);
-  res.json({ ok: true, user, family: { family_id: r.family.family_id, family_name: r.family.family_name } });
+  res.json({ ok: true, token: signToken(r.uid), user, family: { family_id: r.family.family_id, family_name: r.family.family_name } });
 });
 
 api.post('/auth/employer/login', (req, res) => {
@@ -499,7 +522,7 @@ api.post('/auth/employer/login', (req, res) => {
   db.prepare("UPDATE User SET last_login_at=datetime('now') WHERE user_id=?").run(u.user_id);
   const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(u.user_id);
   const family = fm ? db.prepare('SELECT family_id,family_name FROM Family WHERE family_id=?').get(fm.family_id) : null;
-  res.json({ ok: true, user: { user_id: u.user_id, name: u.name, avatar: u.avatar, username }, family });
+  res.json({ ok: true, token: signToken(u.user_id), user: { user_id: u.user_id, name: u.name, avatar: u.avatar, username }, family });
 });
 
 // ===== 任务清单模块（修改版）：按星期重复 =====

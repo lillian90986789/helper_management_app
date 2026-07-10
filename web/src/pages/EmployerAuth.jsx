@@ -20,7 +20,7 @@ export default function EmployerAuth() {
   const finish = (r) => {
     try {
       localStorage.setItem('hf_role', 'employer');
-      localStorage.setItem('hf_employer', JSON.stringify({ user_id: r.user.user_id, name: r.user.name, avatar: r.user.avatar, family: r.family?.family_name }));
+      localStorage.setItem('hf_employer', JSON.stringify({ user_id: r.user.user_id, name: r.user.name, avatar: r.user.avatar, family: r.family?.family_name, token: r.token }));
     } catch {}
     nav('/e/home', { replace: true });
   };

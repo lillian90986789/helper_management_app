@@ -24,7 +24,7 @@ export default function JoinPage() {
     setBusy(true);
     try {
       const r = await api.join({ invite_code: code.trim().toUpperCase(), name: name.trim(), preferred_language: plang });
-      try { localStorage.setItem('hf_role', 'maid'); localStorage.setItem('hf_maid', JSON.stringify({ user_id: r.user_id, name: r.name, avatar: r.avatar, family: r.family_name })); } catch {}
+      try { localStorage.setItem('hf_role', 'maid'); localStorage.setItem('hf_maid', JSON.stringify({ user_id: r.user_id, name: r.name, avatar: r.avatar, family: r.family_name, token: r.token })); } catch {}
       setDone(r);
     } catch (e) {
       if (e.code === 'invalid_code') showToast(tt('邀请码无效，请向雇主确认', 'Invalid code — please check with your employer'));

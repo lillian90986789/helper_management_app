@@ -34,7 +34,7 @@ export default function Me({ role }) {
         const dbUser = emp && users.find((u) => u.user_id === emp.user_id && u.role === 'employer');
         const e = dbUser || users.find((u) => u.role === 'employer') || {};
         setProfile({ user_id: e.user_id, name: e.display_name || e.name || (en ? 'Employer' : '雇主'), avatar: e.avatar || '👨🏻‍💼' });
-        if (emp && !dbUser && e.user_id) { try { localStorage.setItem('hf_employer', JSON.stringify({ user_id: e.user_id, name: e.display_name || e.name, avatar: e.avatar })); } catch {} }
+        if (emp && !dbUser && e.user_id) { try { localStorage.setItem('hf_employer', JSON.stringify({ user_id: e.user_id, name: e.display_name || e.name, avatar: e.avatar, token: emp.token })); } catch {} }
       } else {
         let m = null; try { m = JSON.parse(localStorage.getItem('hf_maid') || 'null'); } catch {}
         const dbUser = m && users.find((u) => u.user_id === m.user_id && u.role === 'maid');
@@ -55,7 +55,7 @@ export default function Me({ role }) {
       const r = profile?.user_id ? await api.updateUser(profile.user_id, body) : { ...profile, ...body };
       setProfile({ user_id: r.user_id || profile?.user_id, name: r.display_name || r.name, avatar: r.avatar });
       if (isEmp) {
-        try { localStorage.setItem('hf_employer', JSON.stringify({ user_id: r.user_id || profile?.user_id, name: r.display_name || r.name, avatar: r.avatar })); } catch {}
+        try { const prev = JSON.parse(localStorage.getItem('hf_employer') || '{}'); localStorage.setItem('hf_employer', JSON.stringify({ ...prev, user_id: r.user_id || profile?.user_id, name: r.display_name || r.name, avatar: r.avatar })); } catch {}
         if (draftFamily.trim() !== family) { await api.saveFamilySettings({ family_name: draftFamily.trim() }); setFamily(draftFamily.trim()); }
       } else {
         try { const m = JSON.parse(localStorage.getItem('hf_maid') || '{}'); localStorage.setItem('hf_maid', JSON.stringify({ ...m, user_id: r.user_id || m.user_id, name: r.name, avatar: r.avatar })); } catch {}
