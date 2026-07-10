@@ -1113,7 +1113,8 @@ api.get('/dashboard/maid', async (req, res) => {
   const done = tasks.filter(t=>['done','skipped'].includes(t.status)).length;
   const next = tasks.find(t=>['today_todo','in_progress','returned'].includes(t.status));
   const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image, r.recipe_type FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=?').all(famId(req));
-  const shopping = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC LIMIT 1').get(famId(req)) || null;
+  // 「今日采购」只显示进行中的采购单：已完成（雇主已确认 confirmed）或已取消（canceled）不再显示
+  const shopping = db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND status NOT IN ('confirmed','canceled') ORDER BY shopping_list_id DESC LIMIT 1").get(famId(req)) || null;
   const items = shopping ? db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(shopping.shopping_list_id) : [];
   // 本月休息日 + 下一个休息日（第 4 节）
   const now = new Date();

@@ -62,6 +62,11 @@
 - **改法**：这三处去掉 `assignee_id` 过滤，改为家庭级（`family_id`）。休息日仍按女佣个人（`isRestDay` 不变）。server/index.js:~1111/1114/875。
 - 测试 `test_maid_family_visible.mjs`（7/7）：女佣B（≠被指派的A）能看到任务/菜单/日历任务数/采购单。回归 google_join 14/14、join_then_bind 11/11。
 
+### 2026-07-11 女佣「今日采购」隐藏已完成采购单
+- **需求**：已完成的采购清单不在任何女佣的「今日采购」显示。
+- **改法**：`/dashboard/maid` 的 shopping 卡片查询加 `status NOT IN ('confirmed','canceled')`（confirmed=雇主已确认账目=已完成；canceled=已取消），只取最新的进行中单；无进行中单则卡片为空。采购管理页 `/shopping` 仍列出全部（含历史），不受影响。雇主 dashboard 未改（需求仅针对女佣）。
+- 测试 `test_today_shopping_hide_done.mjs`（5/5）：进行中显示、confirmed/canceled 不显示、回退到更早的进行中单、无进行中则为空。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）
