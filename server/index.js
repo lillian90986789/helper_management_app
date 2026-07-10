@@ -409,6 +409,31 @@ api.post('/auth/google/join', async (req, res) => {
     family_name: family.family_name, name: u.name, avatar: u.avatar, email: u.email, is_new: result.isNew });
 });
 
+// 女佣已加入并绑定过 Google 后，直接用 Google 登录（无需再输邀请码）。按 email 匹配已有女佣账号。
+api.post('/auth/google/maid-login', async (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) return res.status(503).json({ error: 'google_not_configured' });
+  const credential = req.body.credential;
+  if (!credential) return res.status(400).json({ error: 'credential_required' });
+  let info;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
+    if (!r.ok) return res.status(401).json({ error: 'invalid_token' });
+    info = await r.json();
+  } catch (e) { return res.status(502).json({ error: 'verify_failed' }); }
+  if (info.aud !== clientId) return res.status(401).json({ error: 'aud_mismatch' });
+  if (String(info.email_verified) !== 'true') return res.status(401).json({ error: 'email_unverified' });
+  const email = normEmail(info.email);
+  const u = db.prepare("SELECT * FROM User WHERE email=? AND role='maid' AND COALESCE(account_status,'active')<>'removed'").get(email);
+  if (!u) return res.status(404).json({ error: 'maid_not_found' });        // 该 Gmail 还没绑定女佣账号 → 请先用邀请码加入
+  const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(u.user_id);
+  if (!fm) return res.status(404).json({ error: 'maid_not_in_family' });   // 账号存在但已被移出家庭
+  const family = db.prepare('SELECT family_id, family_name FROM Family WHERE family_id=?').get(fm.family_id);
+  db.prepare("UPDATE User SET login_method='google', last_login_at=datetime('now') WHERE user_id=?").run(u.user_id);
+  res.json({ token: signToken(u.user_id), user_id: u.user_id, name: u.name, avatar: u.avatar, email,
+    family_id: family.family_id, family_name: family.family_name });
+});
+
 // ---- 引导/家庭/用户 ----
 api.get('/bootstrap', (req, res) => {
   const family = curFamily(req);

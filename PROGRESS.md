@@ -67,6 +67,15 @@
 - **改法**：`/dashboard/maid` 的 shopping 卡片查询加 `status NOT IN ('confirmed','canceled')`（confirmed=雇主已确认账目=已完成；canceled=已取消），只取最新的进行中单；无进行中单则卡片为空。采购管理页 `/shopping` 仍列出全部（含历史），不受影响。雇主 dashboard 未改（需求仅针对女佣）。
 - 测试 `test_today_shopping_hide_done.mjs`（5/5）：进行中显示、confirmed/canceled 不显示、回退到更早的进行中单、无进行中则为空。
 
+### 2026-07-11 女佣「直接用 Google 登录」入口
+- **需求**：登录/注册页在「我是女佣，用邀请码加入」上方，加同样式按钮「女佣已加入大家庭，直接用 Google 登录」。
+- **实现**：
+  - 后端 `POST /auth/google/maid-login`：校验 Google → 按 email 找 `role='maid'` 且未注销的账号 → 返回 token+家庭；找不到 404 `maid_not_found`（提示先用邀请码加入），无家庭 404 `maid_not_in_family`。
+  - 前端新页 `MaidLogin.jsx`（路由 `/m/login`，已加入 App.jsx 公共页白名单，未登录可访问）：GSI 按钮 → `api.maidGoogleLogin` → 存 hf_maid → `/m/today`。
+  - `EmployerAuth.jsx`(/login) 与 `Register.jsx`(/register) 的女佣邀请码按钮上方各加一个 outline 按钮 → `nav('/m/login')`。
+  - 说明：同页 GSI 只能一个 initialize 回调，故女佣登录单独放一页，而非在登录页再挂一个 Google 按钮。
+- 测试 `test_maid_google_login.mjs`（8/8）：加入后直接登录同账号、陌生/雇主 Gmail 404、已注销 404。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

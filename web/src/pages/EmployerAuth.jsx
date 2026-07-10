@@ -152,6 +152,7 @@ export default function EmployerAuth() {
       </div>
 
       <div className="actionbar">
+        <button className="btn outline block" style={{ marginBottom: 8 }} onClick={() => nav('/m/login')}>🔑 {tt('女佣已加入大家庭，直接用 Google 登录', 'Helper already joined — sign in with Google')}</button>
         <button className="btn outline block" onClick={() => nav('/join')}>🧹 {tt('我是女佣，用邀请码加入', "I'm a helper — join with invite code")}</button>
       </div>
     </>

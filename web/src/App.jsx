@@ -15,6 +15,7 @@ import Register from './pages/Register.jsx';
 import EmployerAuth from './pages/EmployerAuth.jsx';
 import JoinPage from './pages/JoinPage.jsx';
 import MaidBind from './pages/MaidBind.jsx';
+import MaidLogin from './pages/MaidLogin.jsx';
 import { api } from './api.js';
 import RecipeList from './pages/RecipeList.jsx';
 import RecipeDetail from './pages/RecipeDetail.jsx';
@@ -104,7 +105,7 @@ export default function App() {
   const maidUnbound = () => { try { const m = JSON.parse(localStorage.getItem('hf_maid') || 'null'); return !!m?.user_id && !m?.email; } catch { return false; } };
   useEffect(() => {
     const p = loc.pathname;
-    if (['/register', '/login', '/register-wizard', '/join', '/admin'].includes(p)) return;   // 公共页
+    if (['/register', '/login', '/register-wizard', '/join', '/m/login', '/admin'].includes(p)) return;   // 公共页
     if (p === '/') {
       if (authed('employer')) nav('/e/home', { replace: true });
       else if (authed('maid')) nav('/m/today', { replace: true });
@@ -169,6 +170,7 @@ export default function App() {
               <Route path="/register-wizard" element={<Register />} />
               <Route path="/join" element={<JoinPage />} />
               <Route path="/m/bind" element={<MaidBind />} />
+              <Route path="/m/login" element={<MaidLogin />} />
               <Route path="/task-new" element={<TaskNew />} />
               <Route path="/task-new/:id" element={<TaskNew />} />
               <Route path="/templates" element={<Templates />} />
