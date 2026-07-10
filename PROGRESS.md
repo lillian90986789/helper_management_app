@@ -21,10 +21,17 @@
 
 ## 五项需求进展
 1. **一个 Gmail 只能注册一个账号** — ✅ 完成。`server/db.js` 建 `idx_user_email` 唯一索引（email 非空时唯一）+ 应用层查重。
-2. **账号绑定 Google、Gmail 作主 key** — ✅ 雇主部分完成。
+2. **账号绑定 Google、Gmail 作主 key** — ✅ 雇主 + 女佣均完成。
    - 雇主登录页 `web/src/pages/EmployerAuth.jsx` 改为**以「用 Gmail 登录/注册」为主**；账号密码收进「旧账号（legacy）」折叠入口；Google 未配置（/config 无 client_id）时自动回退显示账号密码，避免锁死。
-   - **女佣仍走邀请码登录，不改**（用户 2026-07-10 明确确认：只有雇主基于邮箱）。
+   - **女佣也改为以 Gmail 唯一标识**（用户 2026-07-11 明确要求，推翻 7-10 的"女佣不改"）。见下「2026-07-11 女佣 Google 绑定」。
    - 雇主 Gmail 登录走 `/auth/google`（tokeninfo 校验 → 按 email 匹配/新建家庭）。老用户可在「我的」页 `/auth/google/bind` 绑 Gmail。
+
+### 2026-07-11 女佣 Google 绑定（修复：女佣看不到任务/休息日 + 每次加入都新建账号）
+- **根因**：`/join` 每次无条件新建 maid 账号 → 一个家庭堆多个女佣号；而 `/dashboard/maid`、`/month`、`/rest-days` 都按 `helper_id`(=女佣自己 id) 过滤 `assignee_id`/`helper_user_id`，雇主设任务/休息日时锁定的是 `defaultHelperId`(家庭最小 id 的女佣)，与新登录女佣 id 对不上 → 任务、休息日全看不到。
+- **修复**：新端点 `POST /api/auth/google/join`（server/index.js，`/auth/google/bind` 之后）：Google 校验 → 按 email 找女佣：① 已存在→复用(跨设备/重进同一人，去重)；② 否则认领本家庭「无邮箱的默认女佣旧号」并写入 email（让雇主已设的任务/休息日立刻对得上）；③ 都没有才新建。家庭成员记录 upsert(复活/去重)。拒绝已是雇主的 Gmail(409 email_is_employer)。
+- 前端 `web/src/pages/JoinPage.jsx` 改为 **Google 优先**：填邀请码→用 Google 加入（`api.googleJoin`）；Google 未配置时回退「邀请码+姓名」旧流程(`/join`)避免锁死。
+- **前提**：服务器必须配 `GOOGLE_CLIENT_ID`（且 OAuth 授权来源含线上域名），否则女佣端回退旧流程、问题依旧。
+- 已用真实端点 + sqlite 断言测试(14/14)：认领旧号不新建/重进去重/任务可见/休息日可见/第二个 Gmail 新建/雇主 Gmail 被拒/无效码 404。测试脚本在 scratchpad `test_google_join.mjs`（mock `globalThis.fetch` 的 tokeninfo）。`server/index.js` 末尾加了 `export { app }` 供测试 import。
 3. **雇主能看女佣采购的 receipt 图片** — ✅ 完成（提交 a9f1c2e，`ShoppingPage.jsx` 用 `isImgAvatar` 判断，URL 渲染成可点击放大的 img）。
 4. **雇主删成员 → 后台同步删除** — ✅ 完成。`/members/:id/remove`（server/index.js:425）事务内标记 `FamilyMember.status='removed'` + `User.account_status='removed', email=NULL`（释放 Gmail 可重注册）；禁止删自己（400 cannot_remove_self）。
 5. **记录女佣登录时间 + 3 个月不活跃自动清空** — ✅ 完成。

@@ -341,6 +341,74 @@ api.post('/auth/google/bind', async (req, res) => {
   res.json({ ok: true, email });
 });
 
+// 女佣用 Google 凭邀请码加入家庭：以 Gmail 作女佣唯一标识，避免每次加入都新建账号。
+// 复用规则：① 该 Gmail 已有女佣账号 → 直接复用（跨设备/重进都同一人，杜绝重复号）；
+//          ② 否则若本家庭已有「无邮箱的女佣号」（此前用邀请码建的，雇主的任务/休息日就绑在它上面）→ 认领它并写入邮箱，
+//             让雇主已设的任务/休息日立刻对得上；③ 都没有才新建。
+api.post('/auth/google/join', async (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) return res.status(503).json({ error: 'google_not_configured' });
+  const { credential, invite_code, preferred_language } = req.body;
+  if (!credential) return res.status(400).json({ error: 'credential_required' });
+  if (!invite_code) return res.status(400).json({ error: 'invite_code_required' });
+  const family = db.prepare('SELECT * FROM Family WHERE invite_code = ?').get(String(invite_code).trim().toUpperCase());
+  if (!family) return res.status(404).json({ error: 'invalid_code' });
+  let info;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
+    if (!r.ok) return res.status(401).json({ error: 'invalid_token' });
+    info = await r.json();
+  } catch (e) { return res.status(502).json({ error: 'verify_failed' }); }
+  if (info.aud !== clientId) return res.status(401).json({ error: 'aud_mismatch' });
+  if (String(info.email_verified) !== 'true') return res.status(401).json({ error: 'email_unverified' });
+  const email = normEmail(info.email);
+  const lang = preferred_language || info.locale || 'en';
+  const gname = info.name || (req.body.name && String(req.body.name).trim()) || email.split('@')[0];
+
+  const result = db.transaction(() => {
+    // 该 Gmail 若已是雇主账号，禁止再作为女佣加入（一个邮箱一种身份，避免唯一索引冲突）
+    const asEmployer = db.prepare("SELECT 1 FROM User WHERE email=? AND role='employer'").get(email);
+    if (asEmployer) return { error: 'email_is_employer' };
+    let uid;
+    let isNew = false;
+    const existing = db.prepare("SELECT * FROM User WHERE email=? AND role='maid'").get(email);
+    if (existing) {
+      uid = existing.user_id;
+      db.prepare("UPDATE User SET login_method='google', preferred_language=COALESCE(preferred_language,?), account_status='active', last_login_at=datetime('now'), updated_at=datetime('now') WHERE user_id=?")
+        .run(lang, uid);
+    } else {
+      // 认领本家庭内「无邮箱、默认女佣（最小 id）」的旧账号——雇主的任务/休息日正是绑在它上面
+      const legacy = db.prepare("SELECT u.* FROM User u JOIN FamilyMember fm ON fm.user_id=u.user_id WHERE fm.family_id=? AND u.role='maid' AND fm.status='active' AND (u.email IS NULL OR u.email='') ORDER BY u.user_id LIMIT 1").get(family.family_id);
+      if (legacy) {
+        uid = legacy.user_id;
+        db.prepare("UPDATE User SET email=?, login_method='google', preferred_language=COALESCE(NULLIF(preferred_language,''),?), account_status='active', last_login_at=datetime('now'), updated_at=datetime('now') WHERE user_id=?")
+          .run(email, lang, uid);
+      } else {
+        isNew = true;
+        const pool = AVATARS.maid;
+        const avatar = pool[Math.floor(Math.random() * pool.length)];
+        uid = db.prepare(`INSERT INTO User (name, avatar, email, role, login_method, preferred_language, account_status, last_login_at, updated_at)
+          VALUES (?,?,?, 'maid', 'google', ?, 'active', datetime('now'), datetime('now'))`)
+          .run(gname, avatar, email, lang).lastInsertRowid;
+      }
+    }
+    // 确保该女佣在本家庭内有一条 active 成员记录（重进/曾被移除时复活，避免重复插入）
+    const mem = db.prepare('SELECT * FROM FamilyMember WHERE family_id=? AND user_id=?').get(family.family_id, uid);
+    if (mem) {
+      if (mem.status !== 'active') db.prepare("UPDATE FamilyMember SET status='active' WHERE family_member_id=?").run(mem.family_member_id);
+    } else {
+      db.prepare("INSERT INTO FamilyMember (family_id, user_id, role, status) VALUES (?,?,?,?)").run(family.family_id, uid, 'maid', 'active');
+    }
+    return { uid, isNew };
+  })();
+
+  if (result.error) return res.status(409).json({ error: result.error });
+  const u = db.prepare('SELECT user_id,name,avatar,email FROM User WHERE user_id=?').get(result.uid);
+  if (result.isNew) notify(family.family_id, 'system', '女佣加入家庭', `${u.name} 通过 Google 加入`, 'member', u.user_id, 'employer');
+  res.json({ token: signToken(u.user_id), user_id: u.user_id, family_id: family.family_id,
+    family_name: family.family_name, name: u.name, avatar: u.avatar, email: u.email, is_new: result.isNew });
+});
+
 // ---- 引导/家庭/用户 ----
 api.get('/bootstrap', (req, res) => {
   const family = curFamily(req);
@@ -1758,3 +1826,5 @@ setInterval(cleanupInactiveAccounts, 24 * 60 * 60 * 1000);   // 每天跑一次
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`🏠 HomeFlow 运行于 http://localhost:${PORT}`));
+
+export { app };

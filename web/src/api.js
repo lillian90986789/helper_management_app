@@ -89,6 +89,7 @@ export const api = {
   removeMember: (id) => req(`/members/${id}/remove`, { method: 'POST' }),
   regenInvite: () => req('/family/invite-code', { method: 'POST' }),
   join: (body) => req('/join', { method: 'POST', body }),
+  googleJoin: (body) => req('/auth/google/join', { method: 'POST', body }),
   dashEmployer: () => req('/dashboard/employer'),
   dashMaid: (helperId) => req('/dashboard/maid' + (helperId ? '?helper_id=' + helperId : '')),
   // 任务清单模块（修改版）：每日实例
