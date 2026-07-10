@@ -17,6 +17,11 @@ services:
       # 管理员后台密钥（订阅/收款管理）。在 .env 里设 ADMIN_KEY=一串很长的随机字符串。
       # 不设则管理后台停用（/admin 打不开）。切勿使用简单密码。
       - ADMIN_KEY=${ADMIN_KEY:-}
+      # Google 登录的 Client ID（在 .env 里设 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com）。
+      # 不设则登录页不显示 Google 按钮。它不是机密，可公开；此处仍从 .env 读便于统一管理。
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      # 登录令牌签名密钥（不设会自动生成并存库；如需固定可设 AUTH_SECRET=长随机串）。
+      - AUTH_SECRET=${AUTH_SECRET:-}
     expose:
       - "8080"          # 只在容器网络内暴露，由 Caddy 转发，不直接对公网开放
 
