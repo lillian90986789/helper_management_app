@@ -72,9 +72,9 @@ export default function MaidBind() {
         </div>
 
         <div className="card" style={{ padding: '20px 16px' }}>
-          {ready
-            ? <div ref={box} style={{ display: 'flex', justifyContent: 'center', opacity: busy ? 0.5 : 1, pointerEvents: busy ? 'none' : 'auto' }} />
-            : <div className="tiny muted" style={{ textAlign: 'center' }}>{tt('正在加载 Google…', 'Loading Google…')}</div>}
+          {/* ref 容器必须始终挂载，否则 renderButton 时 box.current 为空、按钮画不出来 */}
+          <div ref={box} style={{ display: 'flex', justifyContent: 'center', minHeight: 44, opacity: busy ? 0.5 : 1, pointerEvents: busy ? 'none' : 'auto' }} />
+          {!ready && <div className="tiny muted" style={{ textAlign: 'center', marginTop: 8 }}>{tt('正在加载 Google…', 'Loading Google…')}</div>}
         </div>
 
         <div className="hint" style={{ marginTop: 14 }}>ℹ️ {tt('这一步是必需的，不能跳过。', 'This step is required and cannot be skipped.')}</div>
