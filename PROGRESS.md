@@ -56,6 +56,12 @@
 - 测试：`test_join_then_bind.mjs`（11/11）姓名加入→google/join 绑定→认领同一账号/写邮箱/无重复号/重进不变。`test_admin_delete_sync.mjs`（12/12，含管理员删除+审计）。
 - **注意**：整套强制绑定只在服务器配了 `GOOGLE_CLIENT_ID` 时才启用；线上务必配好（含 OAuth 授权来源域名），否则女佣端只走姓名加入、不强制。
 
+### 2026-07-11 女佣端任务/菜单改为家庭级可见
+- **需求**：同一家庭里**任何女佣（含新加入的）都要能看到雇主设置的任务、今日菜单、采购单**。
+- **根因**：`/dashboard/maid`（MaidToday 首页）的任务/菜单、`/month`（MaidCalendar 日历）的每日任务数原本按 `assignee_id=helperId` 过滤，新女佣 id 与被指派对象不同 → 看不到。（采购单本就是家庭级，一直可见。）
+- **改法**：这三处去掉 `assignee_id` 过滤，改为家庭级（`family_id`）。休息日仍按女佣个人（`isRestDay` 不变）。server/index.js:~1111/1114/875。
+- 测试 `test_maid_family_visible.mjs`（7/7）：女佣B（≠被指派的A）能看到任务/菜单/日历任务数/采购单。回归 google_join 14/14、join_then_bind 11/11。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

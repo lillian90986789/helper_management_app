@@ -871,8 +871,8 @@ api.get('/month', (req, res) => {
     const dObj = new Date(year, month - 1, dd);
     const ds = ymd(dObj);
     ensureDailyTasks(ds, famId(req));
-    // 按当前女佣过滤（女佣日历只看自己的任务；雇主设休息日时看该女佣的任务量）
-    const tasks = db.prepare("SELECT status FROM DailyTask WHERE task_date=? AND assignee_id=? AND family_id=? AND status != 'canceled'").all(ds, helperId, famId(req));
+    // 家庭级可见：日历按家庭汇总当天任务（同家庭女佣都能看到雇主设置的全部）
+    const tasks = db.prepare("SELECT status FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled'").all(ds, famId(req));
     const done = tasks.filter((t) => t.status === 'done').length;
     const incomplete = tasks.filter((t) => t.status === 'incomplete').length;
     const pending_review = tasks.filter((t) => t.status === 'pending_review').length;
@@ -1108,10 +1108,11 @@ api.get('/dashboard/maid', async (req, res) => {
   const helperId = resolveHelperId(req, req.query.helper_id);
   const todayRest = !!activeRestDay(date, helperId);
   ensureDailyTasks(date, famId(req));
-  const tasks = db.prepare("SELECT * FROM DailyTask WHERE task_date=? AND assignee_id=? AND family_id=? AND status != 'canceled' ORDER BY sort_order, daily_task_id").all(date, helperId, famId(req)).map(dailyWith);
+  // 家庭级可见：同一家庭的女佣都能看到雇主设置的当天任务与今日菜单（不按 assignee 过滤）
+  const tasks = db.prepare("SELECT * FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled' ORDER BY sort_order, daily_task_id").all(date, famId(req)).map(dailyWith);
   const done = tasks.filter(t=>['done','skipped'].includes(t.status)).length;
   const next = tasks.find(t=>['today_todo','in_progress','returned'].includes(t.status));
-  const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image, r.recipe_type FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE assignee_id=? AND mo.family_id=?').all(helperId, famId(req));
+  const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image, r.recipe_type FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=?').all(famId(req));
   const shopping = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC LIMIT 1').get(famId(req)) || null;
   const items = shopping ? db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(shopping.shopping_list_id) : [];
   // 本月休息日 + 下一个休息日（第 4 节）
