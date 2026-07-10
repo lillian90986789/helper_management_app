@@ -74,6 +74,7 @@ export const api = {
   bootstrap: () => req('/bootstrap'),
   runtimeConfig: () => req('/config'),
   authGoogle: (credential) => req('/auth/google', { method: 'POST', body: { credential } }),
+  bindGoogle: (credential) => req('/auth/google/bind', { method: 'POST', body: { credential } }),
   // 订阅与收费
   subPlans: () => req('/subscription/plans'),
   subCurrent: () => req('/subscription/current'),

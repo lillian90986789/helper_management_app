@@ -243,6 +243,28 @@ api.post('/auth/google', async (req, res) => {
   res.json({ ok: true, token: signToken(u.user_id), is_new: isNew, user: { user_id: u.user_id, name: u.name, avatar: u.avatar, email },
     family: { family_id: family.family_id, family_name: family.family_name } });
 });
+// 老用户绑定 Gmail：已登录用户把自己的 Google 邮箱绑到当前账号，之后可用 Google 一键登录进原家庭
+api.post('/auth/google/bind', async (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'auth_required' });
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) return res.status(503).json({ error: 'google_not_configured' });
+  const credential = req.body.credential;
+  if (!credential) return res.status(400).json({ error: 'credential_required' });
+  let info;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
+    if (!r.ok) return res.status(401).json({ error: 'invalid_token' });
+    info = await r.json();
+  } catch (e) { return res.status(502).json({ error: 'verify_failed' }); }
+  if (info.aud !== clientId) return res.status(401).json({ error: 'aud_mismatch' });
+  if (String(info.email_verified) !== 'true') return res.status(401).json({ error: 'email_unverified' });
+  const email = normEmail(info.email);
+  // 该 Gmail 若已绑到别的账号则拒绝，避免两个账号抢同一邮箱
+  const taken = db.prepare('SELECT user_id FROM User WHERE email=? AND user_id<>?').get(email, req.userId);
+  if (taken) return res.status(409).json({ error: 'email_taken' });
+  db.prepare("UPDATE User SET email=?, login_method='google', updated_at=datetime('now') WHERE user_id=?").run(email, req.userId);
+  res.json({ ok: true, email });
+});
 
 // ---- 引导/家庭/用户 ----
 api.get('/bootstrap', (req, res) => {

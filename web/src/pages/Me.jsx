@@ -1,9 +1,40 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n.jsx';
 import { api } from '../api.js';
 import { Avatar, AvatarPicker } from '../ui.jsx';
 import { useApp } from '../App.jsx';
+
+let _gsi = null;
+const loadGsi = () => window.google?.accounts?.id ? Promise.resolve()
+  : (_gsi = _gsi || new Promise((ok, err) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = ok; s.onerror = err; document.head.appendChild(s); }));
+
+// 老用户绑定 Gmail：绑定后可用 Google 一键登录进入原账号
+function GoogleBind({ en, showToast }) {
+  const box = useRef(null); const [bound, setBound] = useState('');
+  useEffect(() => {
+    let dead = false;
+    api.runtimeConfig().then(async (cfg) => {
+      if (dead || !cfg?.google_client_id) return;
+      await loadGsi(); if (dead || !window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({ client_id: cfg.google_client_id, callback: async ({ credential }) => {
+        try { const r = await api.bindGoogle(credential); setBound(r.email); showToast(en ? 'Google linked ✓' : 'Google 已绑定 ✓'); }
+        catch (e) { showToast(e.code === 'email_taken' ? (en ? 'This Gmail is already used by another account' : '该 Gmail 已被其他账号绑定') : (en ? 'Link failed' : '绑定失败')); }
+      } });
+      if (box.current) window.google.accounts.id.renderButton(box.current, { theme: 'outline', size: 'medium', text: 'continue_with', width: 260 });
+    }).catch(() => {});
+    return () => { dead = true; };
+  }, []);
+  return (
+    <>
+      <div className="section-title">🔗 {en ? 'Google account' : '绑定 Google 账号'}</div>
+      <div className="card">
+        <div className="tiny muted" style={{ marginBottom: 10 }}>{bound ? (en ? 'Linked: ' : '已绑定：') + bound : (en ? 'Link your Gmail to sign in with one tap next time.' : '绑定你的 Gmail 后，下次可用 Google 一键登录进入本账号。')}</div>
+        <div ref={box} style={{ display: 'flex', justifyContent: 'center' }} />
+      </div>
+    </>
+  );
+}
 
 export default function Me({ role }) {
   const { t, lang, setLang } = useI18n();
@@ -161,6 +192,7 @@ export default function Me({ role }) {
           ))}
         </div>
 
+        {isEmp && <GoogleBind en={en} showToast={showToast} />}
         {isEmp && <button className="btn outline block mt12" onClick={() => nav('/register')}>➕ {lang === 'en' ? 'Register a new employer account' : '注册新雇主账号'}</button>}
         <button className="btn danger block mt12" onClick={() => { try { localStorage.removeItem(isEmp ? 'hf_employer' : 'hf_maid'); } catch {} nav(isEmp ? '/register' : '/join'); }}>{t('logout')}</button>
         <div className="empty tiny" style={{ paddingTop: 20 }}>HomeFlow 家务管家 · MVP v1.0</div>
