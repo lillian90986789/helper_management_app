@@ -13,21 +13,23 @@ export default function RestDaySettings() {
   const { showToast } = useApp();
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 });
-  const [helper, setHelper] = useState(null);
+  const [helpers, setHelpers] = useState([]);          // 家庭内所有女佣
+  const [helper, setHelper] = useState(null);          // 当前为哪位女佣设置
   const [data, setData] = useState(null);
   const [sel, setSel] = useState(new Set());          // 当前希望成为休息日的日期集合（含已保存）
   const [savedMap, setSavedMap] = useState({});        // date -> rest_day_id（已保存）
   const [notify, setNotify] = useState(true);
   const [confirm, setConfirm] = useState(null);        // 待确认：{ add:[], remove:[], conflicts:[] }
 
-  useEffect(() => { api.bootstrap().then((b) => setHelper((b.users || []).find((u) => u.role === 'maid'))); }, []);
-  const load = (y, m) => api.month(y, m).then((d) => {
+  useEffect(() => { api.bootstrap().then((b) => { const ms = (b.users || []).filter((u) => u.role === 'maid'); setHelpers(ms); setHelper(ms[0] || null); }); }, []);
+  // 按当前选中的女佣加载其休息日（不传则用默认女佣）
+  const load = (y, m) => api.month(y, m, helper?.user_id).then((d) => {
     setData(d);
     const s = new Set(); const map = {};
     d.rest_days.forEach((r) => { s.add(r.rest_date); map[r.rest_date] = r.rest_day_id; });
     setSel(s); setSavedMap(map);
   });
-  useEffect(() => { load(ym.y, ym.m); }, [ym]);
+  useEffect(() => { load(ym.y, ym.m); }, [ym, helper]);
 
   const shiftMonth = (dir) => { let { y, m } = ym; m += dir; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } setYm({ y, m }); };
   const toggle = (ds) => setSel((prev) => { const n = new Set(prev); n.has(ds) ? n.delete(ds) : n.add(ds); return n; });
@@ -76,6 +78,18 @@ export default function RestDaySettings() {
     <>
       <TopBar title={t('restDaySettings')} sub={helper ? `${helper.avatar} ${helper.name}` : ''} />
       <div className="content">
+        {/* 选择为哪位女佣设置休息日（多名女佣时显示；设置后只有该女佣收到通知） */}
+        {helpers.length > 1 && (
+          <div style={{ marginBottom: 10 }}>
+            <div className="tiny muted" style={{ marginBottom: 4 }}>👩🏽‍🦱 {en ? 'Set rest day for' : '为哪位女佣设置'}</div>
+            <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+              {helpers.map((h) => (
+                <button key={h.user_id} className={'chip' + (helper?.user_id === h.user_id ? ' on' : '')} onClick={() => setHelper(h)}>{h.avatar} {h.name}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 月份导航 */}
         <div className="spread" style={{ marginBottom: 8 }}>
           <button className="chip" onClick={() => shiftMonth(-1)}>‹ {t('prevMonth')}</button>

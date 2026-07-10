@@ -397,6 +397,8 @@ addCol('User', 'default_currency', 'TEXT');
 addCol('User', 'registration_status', "TEXT DEFAULT 'COMPLETED'");
 addCol('User', 'updated_at', 'TEXT');
 addCol('User', 'last_login_at', 'TEXT');
+// Notification → 可定向到具体用户（如休息日只通知对应女佣）；为空表示按 to_role 群发
+addCol('Notification', 'to_user_id', 'INTEGER');
 // Family → 采购模块：可配置消费税率 GST（第 8.3 节风格，家庭级设置）
 addCol('Family', 'gst_rate', 'REAL DEFAULT 0.09');
 // Family → 对应 PRD Family

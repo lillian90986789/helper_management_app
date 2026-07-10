@@ -272,8 +272,9 @@ function createEmptyFamily(familyName) {
 // ---- 辅助 ----
 const log = (taskId, actorId, action, from, to) =>
   db.prepare(`INSERT INTO TaskLog (task_id,actor_id,action,from_status,to_status) VALUES (?,?,?,?,?)`).run(taskId, actorId, action, from, to);
-const notify = (familyId,type,title,content,refType,refId,toRole) =>
-  db.prepare(`INSERT INTO Notification (family_id,type,title,content,ref_type,ref_id,to_role) VALUES (?,?,?,?,?,?,?)`).run(familyId,type,title,content,refType,refId,toRole);
+// toUserId 非空时只有该用户能看到（如休息日只通知对应女佣）；为空则按 toRole 群发
+const notify = (familyId,type,title,content,refType,refId,toRole,toUserId=null) =>
+  db.prepare(`INSERT INTO Notification (family_id,type,title,content,ref_type,ref_id,to_role,to_user_id) VALUES (?,?,?,?,?,?,?,?)`).run(familyId,type,title,content,refType,refId,toRole,toUserId);
 
 // 前端可读的运行时配置（是否启用 Google 登录）
 api.get('/config', (req, res) => res.json({ google_client_id: process.env.GOOGLE_CLIENT_ID || null }));
@@ -977,7 +978,7 @@ api.post('/rest-days', (req, res) => {
     const msg = dates.length === 1
       ? `你的休息日已更新：${fmtCn(dates[0])}`
       : `你的休息日已更新，共 ${dates.length} 天`;
-    notify(family.family_id, 'rest_day', '休息日已更新', msg, 'rest_day', created[0] || null, 'maid');
+    notify(family.family_id, 'rest_day', '休息日已更新', msg, 'rest_day', created[0] || null, 'maid', helperId);
   }
   res.json({ ok: true, created_count: created.length });
 });
@@ -991,7 +992,7 @@ api.delete('/rest-days/:id', (req, res) => {
   // 复活当天因休息日被取消的任务，使其重新生成
   db.prepare("DELETE FROM DailyTask WHERE task_date=? AND assignee_id=? AND status='canceled' AND is_rest_day_task=0").run(r.rest_date, r.helper_user_id);
   ensureDailyTasks(r.rest_date, famId(req));
-  notify(family.family_id, 'rest_day', '休息日已调整', `你的休息日已调整：${fmtCn(r.rest_date)} 已取消`, 'rest_day', r.rest_day_id, 'maid');
+  notify(family.family_id, 'rest_day', '休息日已调整', `你的休息日已调整：${fmtCn(r.rest_date)} 已取消`, 'rest_day', r.rest_day_id, 'maid', r.helper_user_id);
   res.json({ ok: true });
 });
 function fmtCn(ds) { const [y, m, d] = ds.split('-').map(Number); return `${m}月${d}日 ${wdName(isoWeekday(new Date(y, m - 1, d)))}`; }
@@ -1631,6 +1632,8 @@ api.get('/notifications', (req, res) => {
   const { role } = req.query;
   let sql='SELECT * FROM Notification WHERE family_id=?', args=[famId(req)];
   if (role) { sql+=' AND to_role=?'; args.push(role); }
+  // 定向通知（to_user_id 非空）只有目标用户可见；群发（为空）所有该角色可见
+  sql+=' AND (to_user_id IS NULL OR to_user_id=?)'; args.push(req.userId);
   sql+=' ORDER BY notification_id DESC';
   res.json(db.prepare(sql).all(...args));
 });

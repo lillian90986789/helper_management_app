@@ -76,6 +76,14 @@
   - 说明：同页 GSI 只能一个 initialize 回调，故女佣登录单独放一页，而非在登录页再挂一个 Google 按钮。
 - 测试 `test_maid_google_login.mjs`（8/8）：加入后直接登录同账号、陌生/雇主 Gmail 404、已注销 404。
 
+### 2026-07-11 休息日「选择女佣」+ 定向通知
+- **需求**：雇主设休息日页可选择为哪位女佣设置；设置后只有对应女佣收到通知。
+- **实现**：
+  - `Notification` 加 `to_user_id`（db.js addCol）；`notify(...,toRole,toUserId=null)` 支持定向；`/notifications` 拉取加 `(to_user_id IS NULL OR to_user_id=?)`（req.userId）——定向通知只目标用户可见，群发（为空）按角色全体可见。
+  - 休息日设置/取消的通知带上 `helperId`/`r.helper_user_id` → 只有对应女佣收到。
+  - 前端 `RestDaySettings.jsx`：加载家庭内所有女佣，家庭有多名女佣时显示「为哪位女佣设置」chips 选择器；切换后按该女佣加载其休息日（`api.month(y,m,helper.user_id)`）；保存已带 `helper_id`（原本就有）。
+- 测试 `test_restday_notify_target.mjs`（7/7）：为A设休息日→A收到、B收不到、通知 to_user_id=A；群发两人都收到。回归 14/14、7/7、8/8。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）
