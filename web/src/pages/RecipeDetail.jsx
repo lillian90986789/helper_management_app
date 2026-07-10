@@ -14,10 +14,15 @@ export default function RecipeDetail() {
   const { role, showToast } = useApp();
   const { data: r, reload } = useAsync(() => api.recipe(id), [id]);
   const [pickMeal, setPickMeal] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const [busy, setBusy] = useState(false);
   if (!r) return <><TopBar title={t('recipes')} /><div className="empty">加载中…</div></>;
 
   const fav = async () => { await api.favorite(r.recipe_id); reload(); };
+  const doDelete = async () => {
+    try { await api.deleteRecipe(r.recipe_id); showToast(en ? 'Recipe deleted' : '菜谱已删除'); nav('/e/recipes', { replace: true }); }
+    catch { showToast(en ? 'Delete failed' : '删除失败'); }
+  };
   // 真实：生成采购清单
   const toShopping = async () => {
     if (busy) return; setBusy(true);
@@ -35,6 +40,7 @@ export default function RecipeDetail() {
     <>
       <TopBar title={pick(lang, r.name, r.name_en)} right={<div className="row" style={{ gap: 6 }}>
         {role === 'employer' && <button className="iconbtn" onClick={() => nav('/recipe-edit/' + r.recipe_id)} title={en ? 'Edit' : '编辑'}>✏️</button>}
+        {role === 'employer' && <button className="iconbtn" onClick={() => setConfirmDel(true)} title={en ? 'Delete' : '删除'}>🗑</button>}
         <button className="iconbtn" onClick={fav}>{r.favorite ? '⭐' : '☆'}</button>
       </div>} />
       <div className="content">
@@ -106,6 +112,20 @@ export default function RecipeDetail() {
               ))}
             </div>
             <button className="btn outline block" style={{ marginTop: 12 }} onClick={() => setPickMeal(false)}>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 删除菜谱确认 */}
+      {confirmDel && (
+        <div className="sheet-mask" onClick={() => setConfirmDel(false)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="bold">{en ? 'Delete this recipe?' : '删除此菜谱？'}</div>
+            <div className="tiny muted" style={{ margin: '6px 0 14px' }}>{en ? 'This recipe will be removed from your list.' : '该菜谱将从菜谱列表中移除。'}</div>
+            <div className="btn-row">
+              <button className="btn outline" onClick={() => setConfirmDel(false)}>{t('cancel')}</button>
+              <button className="btn danger" style={{ flex: 2 }} onClick={doDelete}>{en ? 'Delete' : '删除'}</button>
+            </div>
           </div>
         </div>
       )}

@@ -867,6 +867,13 @@ api.patch('/recipes/:id', (req, res) => {
   try { tx(); } catch (e) { return res.status(500).json({ error: 'update_failed', detail: String(e.message || e) }); }
   res.json(recipeWith(db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(r.recipe_id)));
 });
+// 删除菜谱（软删除，列表已过滤 status='deleted'；保留行以免已安排的菜单join失败）
+api.delete('/recipes/:id', (req, res) => {
+  const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
+  if (!r || r.family_id !== famId(req)) return res.status(404).json({ error: 'not found' });
+  db.prepare("UPDATE Recipe SET status='deleted' WHERE recipe_id=?").run(r.recipe_id);
+  res.json({ ok: true });
+});
 // 从菜谱一键生成采购清单（食材 → 采购项，含二级分类猜测）
 function guessFoodSub(name) {
   const map = [['肉类',['肉','排骨','牛','猪','鸡','羊','鸭']],['海鲜',['鱼','虾','蟹','贝','鲈','鱿','蛤']],

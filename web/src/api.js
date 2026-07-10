@@ -80,6 +80,7 @@ export const api = {
   favorite: (id) => req(`/recipes/${id}/favorite`, { method: 'POST' }),
   createRecipe: (body) => req('/recipes', { method: 'POST', body }),
   updateRecipe: (id, body) => req(`/recipes/${id}`, { method: 'PATCH', body }),
+  deleteRecipe: (id) => req(`/recipes/${id}`, { method: 'DELETE' }),
   recipeToShopping: (id) => req(`/recipes/${id}/to-shopping`, { method: 'POST' }),
   recipeToMeal: (id, body) => req(`/recipes/${id}/to-meal`, { method: 'POST', body }),
   meals: () => req('/meals'),
