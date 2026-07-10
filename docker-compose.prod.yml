@@ -22,6 +22,9 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       # 登录令牌签名密钥（不设会自动生成并存库；如需固定可设 AUTH_SECRET=长随机串）。
       - AUTH_SECRET=${AUTH_SECRET:-}
+      # Google 翻译 API Key（女佣端把雇主中文按需翻成女佣语言）。在 .env 里设
+      # GOOGLE_TRANSLATE_API_KEY=xxx。不设则不翻译、显示原文。翻译结果会缓存，几乎不产生费用。
+      - GOOGLE_TRANSLATE_API_KEY=${GOOGLE_TRANSLATE_API_KEY:-}
     expose:
       - "8080"          # 只在容器网络内暴露，由 Caddy 转发，不直接对公网开放
 

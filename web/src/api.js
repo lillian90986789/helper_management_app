@@ -13,11 +13,12 @@ const currentToken = () => {
     return emp?.token || maid?.token || '';
   } catch { return ''; }
 };
+const currentLang = () => { try { return localStorage.getItem('hf_lang') || 'zh'; } catch { return 'zh'; } };
 async function req(path, opts) {
   const token = currentToken();
   const r = await fetch(base + path, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Auth-Token': token } : {}), ...(opts?.headers || {}) },
+    headers: { 'Content-Type': 'application/json', 'X-Lang': currentLang(), ...(token ? { 'X-Auth-Token': token } : {}), ...(opts?.headers || {}) },
     body: opts?.body ? JSON.stringify(opts.body) : undefined,
   });
   if (r.status === 401) {

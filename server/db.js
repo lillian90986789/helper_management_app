@@ -478,6 +478,14 @@ CREATE TABLE IF NOT EXISTS AppConfig (
   config_value TEXT,
   updated_at TEXT
 );
+-- 机器翻译缓存：同一句话+目标语言只翻一次
+CREATE TABLE IF NOT EXISTS Translation (
+  target_lang TEXT,
+  source_text TEXT,
+  translated_text TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (target_lang, source_text)
+);
 CREATE TABLE IF NOT EXISTS AdminAuditLog (
   audit_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
   admin_id TEXT,                              -- MVP：单超级管理员，记 'super'

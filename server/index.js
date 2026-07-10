@@ -92,6 +92,77 @@ function addMonths(date, n) {
 const getConfig = (k) => { const r = db.prepare('SELECT config_value FROM AppConfig WHERE config_key=?').get(k); return r ? r.config_value : null; };
 const setConfig = (k, v) => db.prepare(`INSERT INTO AppConfig (config_key,config_value,updated_at) VALUES (?,?,datetime('now'))
   ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, updated_at=datetime('now')`).run(k, String(v ?? ''));
+// ===== 机器翻译（Google Translate，按需 + 缓存；未配 Key 则回退原文）=====
+const LANGS = ['zh', 'en', 'id', 'my'];
+const reqLang = (req) => { const l = req.headers['x-lang']; return LANGS.includes(l) ? l : 'zh'; };
+const translateEnabled = () => !!process.env.GOOGLE_TRANSLATE_API_KEY;
+const hasCJK = (s) => typeof s === 'string' && /[一-鿿]/.test(s);
+const trCacheGet = (lang, text) => { const r = db.prepare('SELECT translated_text FROM Translation WHERE target_lang=? AND source_text=?').get(lang, text); return r ? r.translated_text : null; };
+const trCacheSet = (lang, text, val) => { try { db.prepare('INSERT OR REPLACE INTO Translation (target_lang, source_text, translated_text) VALUES (?,?,?)').run(lang, text, val); } catch {} };
+async function googleTranslate(texts, target) {
+  const key = process.env.GOOGLE_TRANSLATE_API_KEY;
+  const r = await fetch('https://translation.googleapis.com/language/translate/v2?key=' + key, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ q: texts, target, source: 'zh-CN', format: 'text' }),
+  });
+  const d = await r.json();
+  if (!r.ok || !d.data) throw new Error('translate_failed');
+  return d.data.translations.map((x) => x.translatedText);
+}
+// 批量翻译一组中文串到 lang，返回取值函数 f(text)->译文（未含中文/失败则回退原文）
+async function trMany(texts, lang) {
+  const passthrough = (t) => t;
+  if (lang === 'zh') return passthrough;
+  const uniq = [...new Set(texts.filter(hasCJK))];
+  if (uniq.length === 0) return passthrough;
+  const out = {}; const need = [];
+  for (const t of uniq) { const c = trCacheGet(lang, t); if (c != null) out[t] = c; else need.push(t); }
+  if (need.length && translateEnabled()) {
+    try {
+      // Google 缅甸语码为 'my'、印尼 'id'、英文 'en'
+      const results = await googleTranslate(need, lang);
+      need.forEach((t, i) => { out[t] = results[i]; trCacheSet(lang, t, results[i]); });
+    } catch (e) { /* 失败：保留原文 */ }
+  }
+  return (t) => (hasCJK(t) && out[t]) || t;
+}
+// 本地化女佣端展示字段：把中文字段翻译后放进对应 _en 字段（前端 pick 消费）；description 直接替换
+async function localizeTasks(req, tasks) {
+  const lang = reqLang(req); if (lang === 'zh' || !Array.isArray(tasks)) return tasks;
+  const pool = [];
+  for (const t of tasks) { pool.push(t.title, t.description); (t.checklist || []).forEach((c) => pool.push(c.title)); }
+  const f = await trMany(pool, lang);
+  for (const t of tasks) {
+    if (hasCJK(t.title)) t.title_en = f(t.title);
+    if (hasCJK(t.description)) t.description = f(t.description);
+    (t.checklist || []).forEach((c) => { if (hasCJK(c.title)) c.title_en = f(c.title); });
+  }
+  return tasks;
+}
+async function localizeRecipes(req, recipes) {
+  const lang = reqLang(req); if (lang === 'zh') return recipes;
+  const list = Array.isArray(recipes) ? recipes : [recipes];
+  const pool = [];
+  for (const r of list) { if (!r) continue; pool.push(r.name); (r.ingredients || []).forEach((i) => pool.push(i.name)); (r.steps || []).forEach((s) => pool.push(s.instruction)); }
+  const f = await trMany(pool, lang);
+  for (const r of list) {
+    if (!r) continue;
+    if (hasCJK(r.name)) r.name_en = f(r.name);
+    (r.ingredients || []).forEach((i) => { if (hasCJK(i.name)) i.name_en = f(i.name); });
+    (r.steps || []).forEach((s) => { if (hasCJK(s.instruction)) s.instruction_en = f(s.instruction); });
+  }
+  return recipes;
+}
+async function localizeLists(req, lists) {
+  const lang = reqLang(req); if (lang === 'zh') return lists;
+  const arr = Array.isArray(lists) ? lists : [lists];
+  const pool = [];
+  for (const l of arr) { if (!l) continue; (l.items || []).forEach((i) => pool.push(i.name)); }
+  const f = await trMany(pool, lang);
+  for (const l of arr) { if (!l) continue; (l.items || []).forEach((i) => { if (hasCJK(i.name)) i.name_en = f(i.name); }); }
+  return lists;
+}
+
 // ===== 登录令牌（HMAC 签名，防止伪造 X-User-Id 冒充他人）=====
 let _authSecret = null;
 function authSecret() {
@@ -628,16 +699,18 @@ function dailyWith(t) {
 const dlog = (id, actor, action, from, to) => db.prepare(`INSERT INTO DailyTaskLog (daily_task_id,actor_id,action,from_status,to_status) VALUES (?,?,?,?,?)`).run(id, actor, action, from, to);
 
 // 当天任务清单（女佣/雇主共用）
-api.get('/daily', (req, res) => {
+api.get('/daily', async (req, res) => {
   const date = req.query.date || todayYmd();
   ensureDailyTasks(date, famId(req));
   const rows = db.prepare("SELECT * FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled' ORDER BY sort_order, daily_task_id").all(date, famId(req)).map(dailyWith);
+  await localizeTasks(req, rows);
   res.json({ date, tasks: rows });
 });
-api.get('/daily/:id', (req, res) => {
+api.get('/daily/:id', async (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
   if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
-  res.json(dailyWith(t));
+  const one = dailyWith(t); await localizeTasks(req, [one]);
+  res.json(one);
 });
 api.post('/daily/:id/transition', (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
@@ -953,7 +1026,7 @@ api.get('/dashboard/employer', (req, res) => {
   const family = curFamily(req);
   res.json({ summary, meals, shopping, shoppingSummary, notifications, family });
 });
-api.get('/dashboard/maid', (req, res) => {
+api.get('/dashboard/maid', async (req, res) => {
   const date = todayYmd();
   const helperId = resolveHelperId(req, req.query.helper_id);
   const todayRest = !!activeRestDay(date, helperId);
@@ -969,6 +1042,9 @@ api.get('/dashboard/maid', (req, res) => {
   const monthRest = db.prepare("SELECT * FROM HelperRestDay WHERE helper_user_id=? AND year=? AND month=? AND status='ACTIVE' ORDER BY rest_date")
     .all(helperId, now.getFullYear(), now.getMonth() + 1).map(restDayView);
   const nextRest = db.prepare("SELECT * FROM HelperRestDay WHERE helper_user_id=? AND status='ACTIVE' AND rest_date>=? ORDER BY rest_date LIMIT 1").get(helperId, date);
+  // 本地化：任务标题 + 菜单菜名 翻译成女佣语言
+  await localizeTasks(req, tasks);
+  { const mf = await trMany(meals.map((m) => m.recipe_name), reqLang(req)); meals.forEach((m) => { if (hasCJK(m.recipe_name)) m.recipe_name_en = mf(m.recipe_name); }); }
   res.json({ tasks, progress:{ done, total: tasks.length }, next, meals,
     rest:{ today_is_rest: todayRest, month: now.getMonth() + 1, year: now.getFullYear(),
       rest_days: monthRest, rest_count: monthRest.length, next_rest_day: nextRest ? restDayView(nextRest) : null },
@@ -981,16 +1057,18 @@ function recipeWith(r) {
   r.steps = db.prepare('SELECT * FROM RecipeStep WHERE recipe_id=? ORDER BY step_number').all(r.recipe_id);
   return r;
 }
-api.get('/recipes', (req, res) => {
+api.get('/recipes', async (req, res) => {
   const { type } = req.query;
   let sql = 'SELECT * FROM Recipe WHERE status!=\'deleted\' AND family_id=?', args=[famId(req)];
   if (type && type!=='all') { sql += ' AND recipe_type=?'; args.push(type); }
-  res.json(db.prepare(sql).all(...args).map(recipeWith));
+  const recs = db.prepare(sql).all(...args).map(recipeWith); await localizeRecipes(req, recs);
+  res.json(recs);
 });
-api.get('/recipes/:id', (req, res) => {
+api.get('/recipes/:id', async (req, res) => {
   const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
   if (!owns(req, r)) return res.status(404).json({ error:'not found' });
-  res.json(recipeWith(r));
+  const rr = recipeWith(r); await localizeRecipes(req, rr);
+  res.json(rr);
 });
 api.post('/recipes/:id/favorite', (req, res) => {
   const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
@@ -1090,11 +1168,12 @@ function mealWith(m) {
   m.recipe = recipeWith(db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(m.recipe_id));
   return m;
 }
-api.get('/meals', (req, res) => res.json(db.prepare('SELECT * FROM MealOrder WHERE family_id=? ORDER BY start_time').all(famId(req)).map(mealWith)));
-api.get('/meals/:id', (req, res) => {
+api.get('/meals', async (req, res) => { const ms = db.prepare('SELECT * FROM MealOrder WHERE family_id=? ORDER BY start_time').all(famId(req)).map(mealWith); await localizeRecipes(req, ms.map(m=>m.recipe)); res.json(ms); });
+api.get('/meals/:id', async (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
   if (!owns(req, m)) return res.status(404).json({ error:'not found' });
-  res.json(mealWith(m));
+  const mm = mealWith(m); await localizeRecipes(req, mm.recipe);
+  res.json(mm);
 });
 // 雇主删除今日菜单中的菜品
 api.delete('/meals/:id', (req, res) => {
@@ -1250,11 +1329,12 @@ function listWith(l) {
   l.category_breakdown = Object.entries(catMap).map(([k,v]) => ({ category: k, amount: +v.toFixed(2) }));
   return l;
 }
-api.get('/shopping', (req, res) => res.json(db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC').all(famId(req)).map(listWith)));
-api.get('/shopping/:id', (req, res) => {
+api.get('/shopping', async (req, res) => { const ls = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC').all(famId(req)).map(listWith); await localizeLists(req, ls); res.json(ls); });
+api.get('/shopping/:id', async (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
   if (!owns(req, l)) return res.status(404).json({ error:'not found' });
-  res.json(listWith(l));
+  const ll = listWith(l); await localizeLists(req, ll);
+  res.json(ll);
 });
 // 雇主创建采购清单
 api.post('/shopping', (req, res) => {
