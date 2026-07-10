@@ -10,7 +10,7 @@ const WD = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 export default function MaidCalendar() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
-  const en = lang === 'en';
+  const en = lang !== 'zh';   // 非中文一律显示英文（回退）
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 });
   const [view, setView] = useState('month');           // month | week
@@ -36,7 +36,7 @@ export default function MaidCalendar() {
   };
   const goToday = () => { setSelected(todayStr); setYm({ y: now.getFullYear(), m: now.getMonth() + 1 }); };
 
-  if (!data) return <><div className="topbar"><h1>{t('calendar')}</h1></div><Empty text="加载中…" /></>;
+  if (!data) return <><div className="topbar"><h1>{t('calendar')}</h1></div><Empty text={en ? "Loading…" : "加载中…"} /></>;
 
   const selDay = data.days.find((d) => d.date === selected);
   const monthTitle = en ? `${enMonth(ym.m)} ${ym.y}` : `${ym.y}年${ym.m}月`;
@@ -78,7 +78,7 @@ export default function MaidCalendar() {
             <div className="bold" style={{ marginTop: 8 }}>{t('restDay')}</div>
             <div className="tiny muted" style={{ marginTop: 4 }}>{t('restDayHint')}</div>
           </div>
-        ) : !day ? <Empty text="加载中…" /> : (
+        ) : !day ? <Empty text={en ? "Loading…" : "加载中…"} /> : (
           <DayTasks day={day} nav={nav} t={t} lang={lang} maidId={maidId} />
         )}
       </div>
@@ -105,7 +105,7 @@ function DayTasks({ day, nav, t, lang, maidId }) {
   const finished = tasks.filter((x) => ['done', 'skipped', 'incomplete'].includes(x.status));
   const groups = {};
   active.forEach((task) => {
-    const key = task.area ? pick(lang, task.area.name, task.area.name_en) : (lang === 'en' ? 'Other' : '其他');
+    const key = task.area ? pick(lang, task.area.name, task.area.name_en) : (lang !== 'zh' ? 'Other' : '其他');
     (groups[key] ||= []).push(task);
   });
   return (
@@ -116,7 +116,7 @@ function DayTasks({ day, nav, t, lang, maidId }) {
           {list.map((task) => <TaskCard key={task.daily_task_id} task={task} onClick={() => nav('/task/' + task.daily_task_id)} lang={lang} t={t} />)}
         </div>
       ))}
-      {active.length === 0 && <Empty icon="✅" text={lang === 'en' ? 'All done!' : '全部完成！'} />}
+      {active.length === 0 && <Empty icon="✅" text={lang !== 'zh' ? 'All done!' : '全部完成！'} />}
       {finished.length > 0 && <>
         <div className="section-title">✅ {t('completedSection')} <span className="muted">{finished.length}</span></div>
         {finished.map((task) => <TaskCard key={task.daily_task_id} task={task} dim onClick={() => nav('/task/' + task.daily_task_id)} lang={lang} t={t} />)}

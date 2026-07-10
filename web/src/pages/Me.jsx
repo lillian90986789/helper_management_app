@@ -41,7 +41,7 @@ export default function Me({ role }) {
   const nav = useNavigate();
   const { showToast } = useApp();
   const isEmp = role === 'employer';
-  const en = lang === 'en';
+  const en = lang !== 'zh';   // 非中文一律显示英文（回退）
   const AVATARS = isEmp ? ['👨🏻‍💼','👩🏻‍💼','🧑🏽','👨🏽','👩🏽','👵🏻','👴🏻'] : ['👩🏽‍🦱','👩🏻‍🦰','👱🏽‍♀️','🧑🏽','👩🏻','👩🏿'];
 
   // 当前登录用户资料（雇主从后端读，女佣读加入时记住的身份）
@@ -96,20 +96,20 @@ export default function Me({ role }) {
   };
   const user = { name: profile?.name || (isEmp ? (en ? 'Employer' : '雇主') : 'Siti'), avatar: profile?.avatar || (isEmp ? '👨🏻‍💼' : '👩🏽‍🦱'), role: t(isEmp ? 'employer' : 'maid') };
   const saveGst = async (pct) => {
-    const p = +pct; if (isNaN(p) || p < 0 || p >= 100) return showToast(lang === 'en' ? 'Enter 0–99' : '请输入 0–99');
+    const p = +pct; if (isNaN(p) || p < 0 || p >= 100) return showToast(lang !== 'zh' ? 'Enter 0–99' : '请输入 0–99');
     setGstPct(p);
-    try { await api.saveFamilySettings({ gst_rate: p / 100 }); showToast((lang === 'en' ? 'GST saved: ' : '消费税已保存：') + p + '%'); }
-    catch { showToast(lang === 'en' ? 'Save failed' : '保存失败'); }
+    try { await api.saveFamilySettings({ gst_rate: p / 100 }); showToast((lang !== 'zh' ? 'GST saved: ' : '消费税已保存：') + p + '%'); }
+    catch { showToast(lang !== 'zh' ? 'Save failed' : '保存失败'); }
   };
 
   const empItems = [
-    ['👨‍👩‍👧 ' + t('familyInfo')], ['👥 ' + t('members'), '/members'], ['🧹 ' + (lang==='en'?'Helper Management':'女佣管理'), '/members'],
-    ['🚪 ' + (lang==='en'?'Rooms & Areas':'房间区域')], ['📋 ' + (lang==='en'?'Task Templates':'任务模板')], ['📖 ' + (lang==='en'?'House Manual':'家庭操作手册')],
-    ['🔔 ' + t('notifySetting')], ['🔒 ' + (lang==='en'?'Account Security':'账号安全')],
+    ['👨‍👩‍👧 ' + t('familyInfo')], ['👥 ' + t('members'), '/members'], ['🧹 ' + (lang!=='zh'?'Helper Management':'女佣管理'), '/members'],
+    ['🚪 ' + (lang!=='zh'?'Rooms & Areas':'房间区域')], ['📋 ' + (lang!=='zh'?'Task Templates':'任务模板')], ['📖 ' + (lang!=='zh'?'House Manual':'家庭操作手册')],
+    ['🔔 ' + t('notifySetting')], ['🔒 ' + (lang!=='zh'?'Account Security':'账号安全')],
   ];
   const maidItems = [
-    ['📅 ' + t('workSchedule')], ['🛌 ' + (lang==='en'?'Rest Days':'休息日')], ['✅ ' + (lang==='en'?'Completed Tasks':'已完成任务')],
-    ['🧾 ' + t('purchaseHistory')], ['📖 ' + (lang==='en'?'House Manual':'家庭操作手册')], ['📞 ' + (lang==='en'?'Emergency Contact':'紧急联系人')],
+    ['📅 ' + t('workSchedule')], ['🛌 ' + (lang!=='zh'?'Rest Days':'休息日')], ['✅ ' + (lang!=='zh'?'Completed Tasks':'已完成任务')],
+    ['🧾 ' + t('purchaseHistory')], ['📖 ' + (lang!=='zh'?'House Manual':'家庭操作手册')], ['📞 ' + (lang!=='zh'?'Emergency Contact':'紧急联系人')],
   ];
   const items = isEmp ? empItems : maidItems;
 
