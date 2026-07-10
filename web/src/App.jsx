@@ -14,6 +14,8 @@ import RestDaySettings from './pages/RestDaySettings.jsx';
 import Register from './pages/Register.jsx';
 import EmployerAuth from './pages/EmployerAuth.jsx';
 import JoinPage from './pages/JoinPage.jsx';
+import MaidBind from './pages/MaidBind.jsx';
+import { api } from './api.js';
 import RecipeList from './pages/RecipeList.jsx';
 import RecipeDetail from './pages/RecipeDetail.jsx';
 import RecipeNew from './pages/RecipeNew.jsx';
@@ -85,15 +87,21 @@ export default function App() {
     else if (loc.pathname.startsWith('/e/')) r = 'employer';
     if (r) { setRole(r); try { localStorage.setItem('hf_role', r); } catch {} }
   }, [loc.pathname]);
-  const showTabs = /^\/(e|m)\//.test(loc.pathname);
+  const showTabs = /^\/(e|m)\//.test(loc.pathname) && loc.pathname !== '/m/bind';
 
   const switchRole = (r) => nav(r === 'employer' ? '/e/home' : '/m/today');
+
+  // 服务器是否启用了 Google 登录（决定是否强制女佣绑定）
+  const [googleOn, setGoogleOn] = useState(null);
+  useEffect(() => { api.runtimeConfig().then((c) => setGoogleOn(!!c?.google_client_id)).catch(() => setGoogleOn(false)); }, []);
 
   // 登录门禁：未登录必须先注册/登录（雇主）或用邀请码加入（女佣）才能使用
   const authed = (r) => {
     try { return !!JSON.parse(localStorage.getItem(r === 'maid' ? 'hf_maid' : 'hf_employer') || 'null')?.user_id; }
     catch { return false; }
   };
+  // 女佣已加入但未绑定 Google（用于「加入后必须绑定」门禁）
+  const maidUnbound = () => { try { const m = JSON.parse(localStorage.getItem('hf_maid') || 'null'); return !!m?.user_id && !m?.email; } catch { return false; } };
   useEffect(() => {
     const p = loc.pathname;
     if (['/register', '/login', '/register-wizard', '/join', '/admin'].includes(p)) return;   // 公共页
@@ -107,8 +115,12 @@ export default function App() {
     if (p.startsWith('/m/')) need = 'maid';
     else if (p.startsWith('/e/')) need = 'employer';
     else need = role;                 // 共享详情页按当前粘性角色判定
-    if (need && !authed(need)) nav(need === 'maid' ? '/join' : '/login', { replace: true });
-  }, [loc.pathname, role]);
+    if (need && !authed(need)) { nav(need === 'maid' ? '/join' : '/login', { replace: true }); return; }
+    // 女佣加入后必须绑定 Google：未绑定则拦到绑定页（仅当服务器启用了 Google，避免锁死）
+    if (googleOn && need === 'maid' && authed('maid') && maidUnbound() && p !== '/m/bind') {
+      nav('/m/bind', { replace: true });
+    }
+  }, [loc.pathname, role, googleOn]);
 
   // 管理员后台：桌面工具，全屏渲染（不套手机外壳）
   if (loc.pathname === '/admin') return (
@@ -156,6 +168,7 @@ export default function App() {
               <Route path="/login" element={<EmployerAuth />} />
               <Route path="/register-wizard" element={<Register />} />
               <Route path="/join" element={<JoinPage />} />
+              <Route path="/m/bind" element={<MaidBind />} />
               <Route path="/task-new" element={<TaskNew />} />
               <Route path="/task-new/:id" element={<TaskNew />} />
               <Route path="/templates" element={<Templates />} />

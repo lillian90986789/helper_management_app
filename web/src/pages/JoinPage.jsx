@@ -37,9 +37,9 @@ export default function JoinPage() {
   const codeRef = useRef(''); codeRef.current = code;
   const plangRef = useRef('en'); plangRef.current = plang;
 
+  // 保存登录态。email 来自 Google 加入（已绑定）；邀请码存下来供「加入后强制绑定」步骤复用。
   const persist = (r) => {
-    try { localStorage.setItem('hf_role', 'maid'); localStorage.setItem('hf_maid', JSON.stringify({ user_id: r.user_id, name: r.name, avatar: r.avatar, family: r.family_name, token: r.token })); } catch {}
-    setDone(r);
+    try { localStorage.setItem('hf_role', 'maid'); localStorage.setItem('hf_maid', JSON.stringify({ user_id: r.user_id, name: r.name, avatar: r.avatar, family: r.family_name, token: r.token, email: r.email || null, invite_code: code.trim().toUpperCase() })); } catch {}
   };
 
   const joinErr = (e) => {
@@ -61,7 +61,7 @@ export default function JoinPage() {
           const invite = codeRef.current.trim().toUpperCase();
           if (!invite) return showToast(tt('请先输入邀请码', 'Enter the invite code first'));
           setBusy(true);
-          try { persist(await api.googleJoin({ invite_code: invite, credential, preferred_language: plangRef.current })); }
+          try { const r = await api.googleJoin({ invite_code: invite, credential, preferred_language: plangRef.current }); persist(r); setDone(r); }
           catch (e) { joinErr(e); }
           setBusy(false);
         },
@@ -72,13 +72,16 @@ export default function JoinPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // 回退：无 Google 时用邀请码 + 姓名加入
+  // 邀请码 + 姓名加入。启用了 Google 时，加入后强制跳绑定页（不绑不能用）；未启用则直接进入。
   const submitLegacy = async () => {
     if (!code.trim()) return showToast(tt('请输入邀请码', 'Enter the invite code'));
     if (!name.trim()) return showToast(tt('请填写你的姓名', 'Enter your name'));
     setBusy(true);
-    try { persist(await api.join({ invite_code: code.trim().toUpperCase(), name: name.trim(), preferred_language: plang })); }
-    catch (e) { joinErr(e); }
+    try {
+      const r = await api.join({ invite_code: code.trim().toUpperCase(), name: name.trim(), preferred_language: plang });
+      persist(r);
+      if (googleReady) nav('/m/bind', { replace: true }); else setDone(r);
+    } catch (e) { joinErr(e); }
     setBusy(false);
   };
 

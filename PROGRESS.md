@@ -45,6 +45,17 @@
 - **女佣加入页没有登录按钮**（回归）：之前「加入」按钮只在 `!googleReady` 时渲染，配了 client_id 但 GSI 没画出按钮时就没有可点入口。改：**任何情况下 actionbar 都渲染「加入家庭」按钮**（Google 未配→primary；已配→outline，Google 按钮作推荐入口并存），姓名字段常显，永不锁死。
 - 测试：`test_admin_delete_sync.mjs`（端到端 12/12）雇主删女佣→后台默认隐藏/include_removed 显示/管理员删除+审计。
 
+### 2026-07-11 女佣「加入后必须绑定 Google」门禁 + 后台删除按钮
+- **需求（用户 2026-07-11 定稿）**：女佣凭邀请码加入家庭，**加入后必须绑定 Google 账号才能使用**。
+- **实现（前端为主，复用已测的后端端点）**：
+  - `JoinPage`：姓名加入成功后，若服务器启用了 Google（`/config` 有 client_id）→ 直接 `nav('/m/bind')` 强制绑定；未启用则照常进入（防锁死）。加入时把邀请码/邮箱存进 `hf_maid`。
+  - 新页 `web/src/pages/MaidBind.jsx`（路由 `/m/bind`，无底部 Tab、无跳过）：Google 按钮回调复用 `POST /auth/google/join`（带保存的邀请码）→ 自动去重/认领旧号、写邮箱、换回该账号 token → 进 `/m/today`。
+  - `App.jsx` 门禁：`googleOn`（拉 `/config` 判断）+ `maidUnbound()`（`hf_maid` 有 user_id 但无 email）→ 女佣未绑定就拦到 `/m/bind`；`googleOn` 为假时不拦（本地/未配 Google 不锁死）。
+  - **判定"已绑定"= `hf_maid.email` 有值**（Google 加入/绑定后才有）。
+- **后台删除按钮**：`AdminConsole` 用户表加「操作」列 → 正常账号显示红色「删除」按钮（`window.confirm`+原因 prompt → `adminApi.deleteUser`），已注销显示「已注销」。
+- 测试：`test_join_then_bind.mjs`（11/11）姓名加入→google/join 绑定→认领同一账号/写邮箱/无重复号/重进不变。`test_admin_delete_sync.mjs`（12/12，含管理员删除+审计）。
+- **注意**：整套强制绑定只在服务器配了 `GOOGLE_CLIENT_ID` 时才启用；线上务必配好（含 OAuth 授权来源域名），否则女佣端只走姓名加入、不强制。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

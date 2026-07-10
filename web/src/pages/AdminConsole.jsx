@@ -163,6 +163,11 @@ function Users() {
   const [showRemoved, setShowRemoved] = useState(false);
   const load = () => adminApi.users(kw || undefined, showRemoved).then(setRows).catch(() => {});
   useEffect(() => { load(); }, [showRemoved]);
+  const del = async (u) => {
+    if (!window.confirm(`确认删除用户「${u.name}」(ID ${u.user_id})？\n将注销账号、释放其绑定的 Gmail、移出家庭；业务数据保留，之后可用该 Gmail 重新注册。`)) return;
+    const reason = prompt('删除原因（可空）', '') ?? '';
+    try { await adminApi.deleteUser(u.user_id, reason); load(); } catch (e) { alert('删除失败: ' + (e.code || '')); }
+  };
   const names = [...new Set(rows.map((u) => u.name).filter(Boolean))];
   const filtered = rows.filter((u) => (roleF.length === 0 || roleF.includes(u.role)) && (nameF.length === 0 || nameF.includes(u.name)));
   return (
@@ -179,7 +184,7 @@ function Users() {
         {(roleF.length > 0 || nameF.length > 0) && <span className="tiny muted">已筛出 {filtered.length} / {rows.length}</span>}
       </div>
       <Scroll><table style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <thead><tr>{['ID', '姓名', '角色', '状态', '手机/邮箱', '家庭', '订阅', '到期', '个人付费', '最后登录'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+        <thead><tr>{['ID', '姓名', '角色', '状态', '手机/邮箱', '家庭', '订阅', '到期', '个人付费', '最后登录', '操作'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
         <tbody>
           {filtered.map((u) => {
             const removed = (u.account_status || 'active') === 'removed';
@@ -191,6 +196,7 @@ function Users() {
               <td style={td}>{u.email || u.phone || '-'}</td><td style={td}>{u.family_name || '-'}</td>
               <td style={td}>{u.sub_status ? <span className={'badge ' + (u.sub_status === 'EXPIRED' ? 'red' : u.sub_status === 'TRIAL_ACTIVE' ? 'blue' : 'green')}>{u.sub_status}</span> : '-'}</td>
               <td style={td}>{(u.expire_at || '').slice(0, 10)}</td><td style={td}>{money(u.personal_paid)}</td><td style={td}>{(u.last_login_at || '').slice(0, 16)}</td>
+              <td style={td}>{removed ? <span className="tiny muted">已注销</span> : <button className="btn sm outline" style={{ color: '#dc2626', borderColor: '#dc2626' }} onClick={() => del(u)}>删除</button>}</td>
             </tr>
           ); })}
         </tbody>
