@@ -36,6 +36,21 @@ api.use((req, res, next) => {
 // 当前家庭（按登录用户）。未登录时的受保护端点已被上面拦截，这里必有 familyId。
 const curFamily = (req) => db.prepare('SELECT * FROM Family WHERE family_id=?').get(req.familyId);
 const famId = (req) => req.familyId;
+// 校验某行（含 family_id 字段）属于当前登录家庭，防止跨家庭按 id 访问
+const owns = (req, row) => !!row && row.family_id === req.familyId;
+// 采购商品无 family_id，经其所属清单校验归属
+const ownsItem = (req, itemId) => {
+  const row = db.prepare('SELECT sl.family_id FROM ShoppingItem si JOIN ShoppingList sl ON sl.shopping_list_id=si.shopping_list_id WHERE si.shopping_item_id=?').get(itemId);
+  return owns(req, row);
+};
+// 解析 helper_id：仅接受本家庭内的成员，否则回退默认女佣，防止用他家 id 越权读写
+const resolveHelperId = (req, raw) => {
+  if (raw) {
+    const ok = db.prepare("SELECT 1 FROM FamilyMember WHERE user_id=? AND family_id=? AND status='active'").get(+raw, req.familyId);
+    if (ok) return +raw;
+  }
+  return defaultHelperId(req.familyId);
+};
 // 新建一个独立且初始为空的家庭（含默认区域，但无任务/菜单/采购）
 function createEmptyFamily(familyName) {
   const code = 'HOME-' + Math.floor(1000 + Math.random() * 9000);
@@ -179,7 +194,9 @@ api.post('/upload-avatar', (req, res) => {
 });
 api.post('/members/:id/remove', (req, res) => {
   // 成员离开家庭：失去数据访问（这里标记为 removed）
-  db.prepare('UPDATE FamilyMember SET status=? WHERE family_member_id=?').run('removed', req.params.id);
+  const fm = db.prepare('SELECT * FROM FamilyMember WHERE family_member_id=?').get(req.params.id);
+  if (!owns(req, fm)) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE FamilyMember SET status=? WHERE family_member_id=?').run('removed', fm.family_member_id);
   res.json({ ok: true });
 });
 
@@ -463,12 +480,12 @@ api.get('/daily', (req, res) => {
 });
 api.get('/daily/:id', (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
-  if (!t) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
   res.json(dailyWith(t));
 });
 api.post('/daily/:id/transition', (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
-  if (!t) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
   const { to, actor_id, action, note } = req.body;
   const now = new Date().toISOString();
   const patch = { status: to, note: note ?? t.note };
@@ -494,11 +511,15 @@ api.post('/daily/:id/transition', (req, res) => {
 api.post('/checklist/:id/toggle', (req, res) => {
   const c = db.prepare('SELECT * FROM DailyTaskChecklist WHERE checklist_id=?').get(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
+  const parent = db.prepare('SELECT family_id FROM DailyTask WHERE daily_task_id=?').get(c.daily_task_id);
+  if (!owns(req, parent)) return res.status(404).json({ error: 'not found' });
   const ns = c.status === 'done' ? 'todo' : 'done';
   db.prepare('UPDATE DailyTaskChecklist SET status=? WHERE checklist_id=?').run(ns, c.checklist_id);
   res.json({ ...c, status: ns });
 });
 api.post('/daily/:id/attachment', (req, res) => {
+  const t = db.prepare('SELECT family_id FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
+  if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
   const { file_url, file_type, uploader_id } = req.body;
   db.prepare('INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?,?,?)').run(req.params.id, uploader_id || 2, file_type || 'image', file_url);
   res.json(db.prepare('SELECT * FROM DailyTaskAttachment WHERE daily_task_id=?').all(req.params.id));
@@ -507,7 +528,7 @@ api.post('/daily/:id/attachment', (req, res) => {
 // 周视图：某周 7 天的任务汇总（雇主端星期切换栏，含休息日标记）
 api.get('/week', (req, res) => {
   const start = req.query.start ? parseYmd(req.query.start) : mondayOf(new Date());
-  const helperId = req.query.helper_id ? +req.query.helper_id : defaultHelperId(famId(req));
+  const helperId = resolveHelperId(req, req.query.helper_id);
   const mon = mondayOf(start);
   const days = [];
   for (let i = 0; i < 7; i++) {
@@ -535,7 +556,7 @@ api.get('/month', (req, res) => {
   const now = new Date();
   const year = req.query.year ? +req.query.year : now.getFullYear();
   const month = req.query.month ? +req.query.month : now.getMonth() + 1; // 1-12
-  const helperId = req.query.helper_id ? +req.query.helper_id : defaultHelperId(famId(req));
+  const helperId = resolveHelperId(req, req.query.helper_id);
   const daysInMonth = new Date(year, month, 0).getDate();
   const firstWd = isoWeekday(new Date(year, month - 1, 1)); // 该月 1 号是周几
   const days = [];
@@ -565,7 +586,7 @@ api.get('/rest-days', (req, res) => {
   const now = new Date();
   const year = req.query.year ? +req.query.year : now.getFullYear();
   const month = req.query.month ? +req.query.month : now.getMonth() + 1;
-  const helperId = req.query.helper_id ? +req.query.helper_id : defaultHelperId(famId(req));
+  const helperId = resolveHelperId(req, req.query.helper_id);
   const rows = db.prepare("SELECT * FROM HelperRestDay WHERE helper_user_id=? AND year=? AND month=? AND status='ACTIVE' ORDER BY rest_date")
     .all(helperId, year, month).map(restDayView);
   res.json({ year, month, helper_id: helperId, rest_days: rows });
@@ -576,7 +597,7 @@ api.get('/rest-days/summary', (req, res) => {
   const now = new Date();
   const year = req.query.year ? +req.query.year : now.getFullYear();
   const month = req.query.month ? +req.query.month : now.getMonth() + 1;
-  const helperId = req.query.helper_id ? +req.query.helper_id : defaultHelperId(famId(req));
+  const helperId = resolveHelperId(req, req.query.helper_id);
   const monthList = db.prepare("SELECT * FROM HelperRestDay WHERE helper_user_id=? AND year=? AND month=? AND status='ACTIVE' ORDER BY rest_date")
     .all(helperId, year, month).map(restDayView);
   const today = todayYmd();
@@ -589,7 +610,7 @@ api.get('/rest-days/summary', (req, res) => {
 api.post('/rest-days', (req, res) => {
   const family = curFamily(req);
   const b = req.body;
-  const helperId = b.helper_id || defaultHelperId(famId(req));
+  const helperId = resolveHelperId(req, b.helper_id);
   const dates = Array.isArray(b.dates) ? b.dates.filter(Boolean) : [];
   if (dates.length === 0) return res.status(400).json({ error: 'dates_required' });
   const handle = b.handle === 'keep' ? 'keep' : 'cancel';   // MVP：默认取消当天任务
@@ -634,7 +655,7 @@ api.post('/rest-days', (req, res) => {
 api.delete('/rest-days/:id', (req, res) => {
   const family = curFamily(req);
   const r = db.prepare('SELECT * FROM HelperRestDay WHERE rest_day_id=?').get(req.params.id);
-  if (!r) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
   db.prepare("UPDATE HelperRestDay SET status='CANCELED', updated_at=datetime('now') WHERE rest_day_id=?").run(r.rest_day_id);
   // 复活当天因休息日被取消的任务，使其重新生成
   db.prepare("DELETE FROM DailyTask WHERE task_date=? AND assignee_id=? AND status='canceled' AND is_rest_day_task=0").run(r.rest_date, r.helper_user_id);
@@ -677,7 +698,7 @@ api.get('/templates', (req, res) => {
 });
 api.get('/templates/:id', (req, res) => {
   const tpl = db.prepare('SELECT * FROM TaskTemplate WHERE task_template_id=?').get(req.params.id);
-  if (!tpl) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, tpl)) return res.status(404).json({ error: 'not found' });
   res.json(templateWith(tpl));
 });
 api.post('/templates', (req, res) => {
@@ -703,7 +724,7 @@ api.post('/templates', (req, res) => {
 });
 api.patch('/templates/:id', (req, res) => {
   const tpl = db.prepare('SELECT * FROM TaskTemplate WHERE task_template_id=?').get(req.params.id);
-  if (!tpl) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, tpl)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const weekdays = b.weekdays !== undefined ? (Array.isArray(b.weekdays) ? b.weekdays : []) : JSON.parse(tpl.weekdays || '[]');
   if (b.weekdays !== undefined && weekdays.length === 0) return res.status(400).json({ error: 'weekdays_required' });
@@ -778,7 +799,7 @@ api.get('/dashboard/employer', (req, res) => {
 });
 api.get('/dashboard/maid', (req, res) => {
   const date = todayYmd();
-  const helperId = req.query.helper_id ? +req.query.helper_id : defaultHelperId(famId(req));
+  const helperId = resolveHelperId(req, req.query.helper_id);
   const todayRest = !!activeRestDay(date, helperId);
   ensureDailyTasks(date, famId(req));
   const tasks = db.prepare("SELECT * FROM DailyTask WHERE task_date=? AND assignee_id=? AND family_id=? AND status != 'canceled' ORDER BY sort_order, daily_task_id").all(date, helperId, famId(req)).map(dailyWith);
@@ -812,11 +833,12 @@ api.get('/recipes', (req, res) => {
 });
 api.get('/recipes/:id', (req, res) => {
   const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
-  if (!r) return res.status(404).json({ error:'not found' });
+  if (!owns(req, r)) return res.status(404).json({ error:'not found' });
   res.json(recipeWith(r));
 });
 api.post('/recipes/:id/favorite', (req, res) => {
   const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
+  if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
   db.prepare('UPDATE Recipe SET favorite=? WHERE recipe_id=?').run(r.favorite?0:1, r.recipe_id);
   res.json({ favorite: r.favorite?0:1 });
 });
@@ -884,7 +906,7 @@ function guessFoodSub(name) {
 api.post('/recipes/:id/to-shopping', (req, res) => {
   const family = curFamily(req);
   const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
-  if (!r) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
   const ings = db.prepare('SELECT * FROM RecipeIngredient WHERE recipe_id=?').all(r.recipe_id);
   const lid = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,status,creator_id) VALUES (?,?,?, 'to_buy', 1)`)
     .run(family.family_id, (r.name.split(' ')[0] || r.name) + ' 采购', defaultHelperId(family.family_id)).lastInsertRowid;
@@ -898,7 +920,7 @@ api.post('/recipes/:id/to-shopping', (req, res) => {
 api.post('/recipes/:id/to-meal', (req, res) => {
   const family = curFamily(req);
   const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
-  if (!r) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const mt = ['breakfast','lunch','dinner'].includes(b.meal_type) ? b.meal_type : 'lunch';
   const mid = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,assignee_id,status,notes) VALUES (?,?,?,?,?,?, 'to_receive', ?)`)
@@ -915,18 +937,19 @@ function mealWith(m) {
 api.get('/meals', (req, res) => res.json(db.prepare('SELECT * FROM MealOrder WHERE family_id=? ORDER BY start_time').all(famId(req)).map(mealWith)));
 api.get('/meals/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
-  if (!m) return res.status(404).json({ error:'not found' });
+  if (!owns(req, m)) return res.status(404).json({ error:'not found' });
   res.json(mealWith(m));
 });
 // 雇主删除今日菜单中的菜品
 api.delete('/meals/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
-  if (!m) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, m)) return res.status(404).json({ error: 'not found' });
   db.prepare('DELETE FROM MealOrder WHERE meal_order_id=?').run(m.meal_order_id);
   res.json({ ok: true });
 });
 api.post('/meals/:id/transition', (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
+  if (!owns(req, m)) return res.status(404).json({ error: 'not found' });
   const { to, result_image } = req.body;
   db.prepare('UPDATE MealOrder SET status=?, result_image=COALESCE(?,result_image) WHERE meal_order_id=?').run(to, result_image??null, m.meal_order_id);
   if (to==='ingredients_short') notify(m.family_id,'meal','食材不足', '菜谱订单缺少食材','meal',m.meal_order_id,'employer');
@@ -1005,7 +1028,7 @@ async function claudeReceiptOCR(base64, mediaType) {
 
 api.post('/shopping/:id/receipt-scan', async (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
-  if (!l) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const base64 = (b.image_base64 || '').replace(/^data:[^;]+;base64,/, '');
   if (!base64) return res.status(400).json({ error: 'image_required' });
@@ -1074,7 +1097,7 @@ function listWith(l) {
 api.get('/shopping', (req, res) => res.json(db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC').all(famId(req)).map(listWith)));
 api.get('/shopping/:id', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
-  if (!l) return res.status(404).json({ error:'not found' });
+  if (!owns(req, l)) return res.status(404).json({ error:'not found' });
   res.json(listWith(l));
 });
 // 雇主创建采购清单
@@ -1093,7 +1116,7 @@ api.post('/shopping', (req, res) => {
 // 雇主更新清单信息 / 上传小票
 api.patch('/shopping/:id', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
-  if (!l) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   db.prepare(`UPDATE ShoppingList SET
       title=COALESCE(@title,title), budget=COALESCE(@budget,budget), store_name=COALESCE(@store_name,store_name),
@@ -1117,7 +1140,7 @@ api.patch('/shopping/:id', (req, res) => {
 // 雇主向清单添加商品（PRD 7.13 添加采购商品页）
 api.post('/shopping/:id/items', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
-  if (!l) return res.status(404).json({ error: 'not found' });
+  if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const pc = b.primary_category || '食材';
   const r = db.prepare(`INSERT INTO ShoppingItem
@@ -1131,11 +1154,13 @@ api.post('/shopping/:id/items', (req, res) => {
   res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(r.lastInsertRowid));
 });
 api.delete('/items/:id', (req, res) => {
+  if (!ownsItem(req, req.params.id)) return res.status(404).json({ error: 'not found' });
   db.prepare('DELETE FROM ShoppingItem WHERE shopping_item_id=?').run(req.params.id);
   res.json({ ok: true });
 });
 api.post('/shopping/:id/transition', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
+  if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
   const { to, employer_confirmed_total } = req.body;
   const now = new Date().toISOString();
   const view = listWith(l);
@@ -1164,6 +1189,7 @@ api.post('/shopping/:id/transition', (req, res) => {
 });
 // 商品：录价 / 标记状态 / 改分类 / 替代审核
 api.patch('/items/:id', (req, res) => {
+  if (!ownsItem(req, req.params.id)) return res.status(404).json({ error: 'not found' });
   const it = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(req.params.id);
   const b = req.body;
   const aq = b.actual_quantity ?? it.actual_quantity;
@@ -1179,6 +1205,7 @@ api.patch('/items/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(it.shopping_item_id));
 });
 api.post('/items/:id/substitute', (req, res) => {
+  if (!ownsItem(req, req.params.id)) return res.status(404).json({ error: 'not found' });
   // 女佣提交替代申请
   const b = req.body;
   db.prepare(`UPDATE ShoppingItem SET status='sub_requested', sub_name=@sub_name, sub_brand=@sub_brand, sub_spec=@sub_spec, sub_price=@sub_price, sub_reason=@sub_reason WHERE shopping_item_id=@id`)
@@ -1189,6 +1216,7 @@ api.post('/items/:id/substitute', (req, res) => {
   res.json(it);
 });
 api.post('/items/:id/substitute/review', (req, res) => {
+  if (!ownsItem(req, req.params.id)) return res.status(404).json({ error: 'not found' });
   const { approve } = req.body;
   const it = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(req.params.id);
   if (approve) {
@@ -1261,12 +1289,16 @@ api.get('/expense/monthly', (req, res) => {
 // ---- 通知 ----
 api.get('/notifications', (req, res) => {
   const { role } = req.query;
-  let sql='SELECT * FROM Notification', args=[];
-  if (role) { sql+=' WHERE to_role=?'; args.push(role); }
+  let sql='SELECT * FROM Notification WHERE family_id=?', args=[famId(req)];
+  if (role) { sql+=' AND to_role=?'; args.push(role); }
   sql+=' ORDER BY notification_id DESC';
   res.json(db.prepare(sql).all(...args));
 });
-api.post('/notifications/:id/read', (req,res)=>{ db.prepare('UPDATE Notification SET is_read=1 WHERE notification_id=?').run(req.params.id); res.json({ok:true}); });
+api.post('/notifications/:id/read', (req,res)=>{
+  const n = db.prepare('SELECT * FROM Notification WHERE notification_id=?').get(req.params.id);
+  if (!owns(req, n)) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE Notification SET is_read=1 WHERE notification_id=?').run(n.notification_id); res.json({ok:true});
+});
 
 app.use('/api', api);
 
