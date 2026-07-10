@@ -131,23 +131,56 @@ function Subs() {
   );
 }
 
+// 通用「下拉多选 + 可输入」筛选器
+function MultiFilter({ label, options, value, onChange, searchable }) {
+  const [open, setOpen] = useState(false); const [q, setQ] = useState('');
+  const roleName = { employer: '雇主', maid: '女佣', member: '家庭成员' };
+  const opts = (searchable ? options.filter((o) => o && o.toLowerCase().includes(q.toLowerCase())) : options).slice(0, 60);
+  const toggle = (o) => onChange(value.includes(o) ? value.filter((x) => x !== o) : [...value, o]);
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className={'btn sm ' + (value.length ? 'primary' : 'outline')} onClick={() => setOpen(!open)}>{label}{value.length ? `(${value.length})` : ''} ▾</button>
+      {open && <>
+        <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
+        <div style={{ position: 'absolute', zIndex: 10, marginTop: 4, background: '#fff', border: '1px solid var(--line)', borderRadius: 10, padding: 8, minWidth: 180, maxHeight: 300, overflow: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+          {searchable && <input className="input" placeholder="输入筛选…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus style={{ marginBottom: 6 }} />}
+          {opts.map((o) => (
+            <label key={o} style={{ display: 'flex', gap: 8, padding: '6px 4px', cursor: 'pointer', fontSize: 13 }}>
+              <input type="checkbox" checked={value.includes(o)} onChange={() => toggle(o)} /> {searchable ? o : (roleName[o] || o)}
+            </label>
+          ))}
+          {opts.length === 0 && <div className="tiny muted" style={{ padding: 6 }}>无匹配</div>}
+          {value.length > 0 && <button className="btn sm outline block" style={{ marginTop: 6 }} onClick={() => onChange([])}>清除</button>}
+        </div>
+      </>}
+    </div>
+  );
+}
+
 function Users() {
   const [rows, setRows] = useState([]); const [kw, setKw] = useState('');
+  const [roleF, setRoleF] = useState([]); const [nameF, setNameF] = useState([]);
   const load = () => adminApi.users(kw || undefined).then(setRows).catch(() => {});
   useEffect(() => { load(); }, []);
+  const names = [...new Set(rows.map((u) => u.name).filter(Boolean))];
+  const filtered = rows.filter((u) => (roleF.length === 0 || roleF.includes(u.role)) && (nameF.length === 0 || nameF.includes(u.name)));
   return (
     <div>
-      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-        <input className="input" placeholder="搜索：用户名/姓名/邮箱/家庭/ID" value={kw} onChange={(e) => setKw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load()} />
-        <button className="btn outline" style={{ flex: 'none' }} onClick={load}>搜索</button>
+      <div className="row" style={{ gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input className="input" style={{ maxWidth: 260 }} placeholder="搜索：用户名/姓名/邮箱/家庭/ID" value={kw} onChange={(e) => setKw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load()} />
+        <button className="btn sm outline" style={{ flex: 'none' }} onClick={load}>搜索</button>
+        <span className="tiny muted">筛选:</span>
+        <MultiFilter label="角色" options={['employer', 'maid', 'member']} value={roleF} onChange={setRoleF} />
+        <MultiFilter label="姓名" options={names} value={nameF} onChange={setNameF} searchable />
+        {(roleF.length > 0 || nameF.length > 0) && <span className="tiny muted">已筛出 {filtered.length} / {rows.length}</span>}
       </div>
       <Scroll><table style={{ borderCollapse: 'collapse', width: '100%' }}>
         <thead><tr>{['ID', '姓名', '角色', '手机/邮箱', '家庭', '订阅', '到期', '个人付费', '最后登录'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
         <tbody>
-          {rows.map((u) => (
+          {filtered.map((u) => (
             <tr key={u.user_id}>
               <td style={td}>{u.user_id}</td><td style={td}>{u.name}</td>
-              <td style={td}>{u.role === 'employer' ? '雇主' : u.role === 'maid' ? '女佣' : u.role}</td>
+              <td style={td}>{u.role === 'employer' ? '雇主' : u.role === 'maid' ? '女佣' : u.role === 'member' ? '家庭成员' : u.role}</td>
               <td style={td}>{u.email || u.phone || '-'}</td><td style={td}>{u.family_name || '-'}</td>
               <td style={td}>{u.sub_status ? <span className={'badge ' + (u.sub_status === 'EXPIRED' ? 'red' : u.sub_status === 'TRIAL_ACTIVE' ? 'blue' : 'green')}>{u.sub_status}</span> : '-'}</td>
               <td style={td}>{(u.expire_at || '').slice(0, 10)}</td><td style={td}>{money(u.personal_paid)}</td><td style={td}>{(u.last_login_at || '').slice(0, 16)}</td>
