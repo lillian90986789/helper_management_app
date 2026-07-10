@@ -12,7 +12,8 @@ export default function MaidToday() {
   const { data, reload } = useAsync(() => api.dashMaid(currentMaidId()));
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
   const { tasks, progress, next, meals, shopping, rest } = data;
-  const dateStr = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+  const dateLocale = { zh: 'zh-CN', en: 'en-US', id: 'id-ID', my: 'my-MM' }[lang] || 'en-US';
+  const dateStr = new Date().toLocaleDateString(dateLocale, { month: 'long', day: 'numeric', weekday: 'long' });
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const en = lang === 'en';
   const maidName = (() => { try { return JSON.parse(localStorage.getItem('hf_maid') || 'null')?.name || 'Siti'; } catch { return 'Siti'; } })();
@@ -31,7 +32,7 @@ export default function MaidToday() {
         <div className="spread">
           <div>
             <div className="small" style={{ opacity: .9 }}>{dateStr}</div>
-            <h1 style={{ fontSize: 22 }}>{(lang === 'en' ? 'Hi, ' : '早上好，') + maidName + ' 👋'}</h1>
+            <h1 style={{ fontSize: 22 }}>{({ zh: '早上好，', en: 'Hi, ', id: 'Halo, ', my: 'မင်္ဂလာပါ, ' }[lang] || 'Hi, ') + maidName + ' 👋'}</h1>
           </div>
           <span className="badge" style={{ background: 'rgba(255,255,255,.25)', color: '#fff' }}>● {t('workday')}</span>
         </div>

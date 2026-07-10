@@ -71,9 +71,10 @@ export default function JoinPage() {
         </div>
         <div className="field">
           <label>{tt('常用语言', 'Preferred language')}</label>
-          <div className="seg">
-            <button className={'opt' + (plang === 'en' ? ' on' : '')} onClick={() => setPlang('en')}>English</button>
-            <button className={'opt' + (plang === 'zh' ? ' on' : '')} onClick={() => setPlang('zh')}>简体中文</button>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {[['en', '🇬🇧 English'], ['id', '🇮🇩 Indonesia'], ['my', '🇲🇲 မြန်မာ'], ['zh', '🇨🇳 简体中文']].map(([code, label]) => (
+              <button key={code} className={'chip' + (plang === code ? ' on' : '')} onClick={() => setPlang(code)}>{label}</button>
+            ))}
           </div>
         </div>
 

@@ -152,9 +152,10 @@ export default function Me({ role }) {
         {/* 语言设置 */}
         <div className="section-title">🌐 {t('langSetting')}</div>
         <div className="card">
-          <div className="seg">
-            <button className={'opt' + (lang === 'zh' ? ' on' : '')} onClick={() => setLang('zh')}>🇨🇳 简体中文</button>
-            <button className={'opt' + (lang === 'en' ? ' on' : '')} onClick={() => setLang('en')}>🇬🇧 English</button>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {[['zh', '🇨🇳 简体中文'], ['en', '🇬🇧 English'], ['id', '🇮🇩 Bahasa Indonesia'], ['my', '🇲🇲 မြန်မာ']].map(([code, label]) => (
+              <button key={code} className={'chip' + (lang === code ? ' on' : '')} onClick={() => setLang(code)}>{label}</button>
+            ))}
           </div>
         </div>
 
