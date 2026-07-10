@@ -509,4 +509,7 @@ CREATE TABLE IF NOT EXISTS AdminNote (
 );
 `);
 
+// 一个 Gmail 只能对应一个账号（空邮箱不限，女佣可无邮箱）。已有重复时忽略建索引，应用层仍会查重。
+try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON User(email) WHERE email IS NOT NULL AND email<>''"); } catch (e) { /* noop */ }
+
 export default db;

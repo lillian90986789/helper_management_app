@@ -26,7 +26,11 @@ api.use((req, res, next) => {
   const uid = verifyToken(raw);
   if (uid) {
     const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(uid);
-    if (fm) { req.userId = uid; req.familyId = fm.family_id; }
+    if (fm) {
+      req.userId = uid; req.familyId = fm.family_id;
+      // 记录最后活跃时间（雇主+女佣通用，1 小时节流，供 3 个月不活跃清理用）
+      db.prepare("UPDATE User SET last_login_at=datetime('now') WHERE user_id=? AND (last_login_at IS NULL OR last_login_at < datetime('now','-1 hour'))").run(uid);
+    }
   }
   // 管理后台走独立的管理员密钥鉴权（adminGuard），此处放行家庭登录校验
   const p = req.path;
@@ -419,10 +423,15 @@ api.post('/upload-avatar', (req, res) => {
   res.json({ url: `/uploads/${fname}` });
 });
 api.post('/members/:id/remove', (req, res) => {
-  // 成员离开家庭：失去数据访问（这里标记为 removed）
+  // 成员离开家庭：失去数据访问 + 同步在后台注销账号并释放 Gmail（可重新注册）
   const fm = db.prepare('SELECT * FROM FamilyMember WHERE family_member_id=?').get(req.params.id);
   if (!owns(req, fm)) return res.status(404).json({ error: 'not found' });
-  db.prepare('UPDATE FamilyMember SET status=? WHERE family_member_id=?').run('removed', fm.family_member_id);
+  if (fm.user_id === req.userId) return res.status(400).json({ error: 'cannot_remove_self' });
+  db.transaction(() => {
+    db.prepare('UPDATE FamilyMember SET status=? WHERE family_member_id=?').run('removed', fm.family_member_id);
+    // 后台同步：账号标记 removed，释放绑定的 Gmail（email 置空），该 Gmail 之后可重新注册
+    db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now') WHERE user_id=?").run(fm.user_id);
+  })();
   res.json({ ok: true });
 });
 
@@ -1732,6 +1741,20 @@ if (fs.existsSync(dist)) {
   app.use(express.static(dist));
   app.get('*', (req, res) => res.sendFile(join(dist, 'index.html')));
 }
+
+// 3 个月未登录的账号自动清空账号信息（释放 Gmail、移出家庭、标记删除），用户可重新注册；业务数据保留
+function cleanupInactiveAccounts() {
+  try {
+    const rows = db.prepare("SELECT user_id FROM User WHERE COALESCE(account_status,'active')<>'removed' AND last_login_at IS NOT NULL AND last_login_at < datetime('now','-3 months')").all();
+    for (const r of rows) {
+      db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now') WHERE user_id=?").run(r.user_id);
+      db.prepare("UPDATE FamilyMember SET status='removed' WHERE user_id=? AND status='active'").run(r.user_id);
+    }
+    if (rows.length) console.log(`🧹 已清理 ${rows.length} 个超过 3 个月未登录的账号`);
+  } catch (e) { console.error('清理任务出错', e); }
+}
+cleanupInactiveAccounts();                                   // 启动跑一次
+setInterval(cleanupInactiveAccounts, 24 * 60 * 60 * 1000);   // 每天跑一次
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`🏠 HomeFlow 运行于 http://localhost:${PORT}`));

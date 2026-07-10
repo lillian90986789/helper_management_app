@@ -17,7 +17,7 @@ function loadGsi() {
   return gsiPromise;
 }
 
-// 雇主：用户名 + 密码 注册 / 登录（女佣走邀请码 /join）
+// 雇主：以 Gmail（Google）为准登录 / 注册；旧账号仍可用用户名密码。女佣走邀请码 /join
 export default function EmployerAuth() {
   const { lang } = useI18n();
   const en = lang === 'en';
@@ -30,6 +30,8 @@ export default function EmployerAuth() {
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const gbtn = useRef(null);
+  const [googleReady, setGoogleReady] = useState(false);   // Google 登录是否可用
+  const [showPwd, setShowPwd] = useState(false);            // 是否展开旧版账号密码登录
 
   const finish = (r) => {
     try {
@@ -54,6 +56,7 @@ export default function EmployerAuth() {
         },
       });
       if (gbtn.current) window.google.accounts.id.renderButton(gbtn.current, { theme: 'outline', size: 'large', width: 300, text: 'continue_with' });
+      if (!cancelled) setGoogleReady(true);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -90,49 +93,65 @@ export default function EmployerAuth() {
         <div className="grow"><h1 style={{ fontSize: 20 }}>🏠 HomeFlow</h1>
           <div className="sub">{tt('家务管家', 'Household Manager')}</div></div>
       </div>
-      <div className="content" style={{ paddingTop: 20 }}>
-        {/* 登录 / 注册 切换 */}
-        <div className="seg" style={{ marginBottom: 16 }}>
-          <button className={'opt' + (mode === 'login' ? ' on' : '')} onClick={() => setMode('login')}>{tt('登录', 'Log in')}</button>
-          <button className={'opt' + (mode === 'register' ? ' on' : '')} onClick={() => setMode('register')}>{tt('注册', 'Sign up')}</button>
+      <div className="content" style={{ paddingTop: 24 }}>
+        {/* 雇主：以 Gmail（Google）为准登录 / 注册 */}
+        <div className="card" style={{ textAlign: 'center', padding: '20px 16px' }}>
+          <div className="bold" style={{ fontSize: 16, marginBottom: 4 }}>{tt('用 Gmail 登录或注册', 'Sign in with Gmail')}</div>
+          <div className="tiny muted" style={{ marginBottom: 14, lineHeight: 1.5 }}>{tt('雇主账号以 Gmail 为准，一个 Gmail 一个账号；首次登录自动创建家庭。', 'Employer accounts are keyed by Gmail — one account per Gmail. First sign-in creates your family.')}</div>
+          <div ref={gbtn} style={{ display: 'flex', justifyContent: 'center' }} />
+          {!googleReady && <div className="tiny muted" style={{ marginTop: 10 }}>{tt('（本环境未启用 Google 登录，请用下方账号密码）', '(Google sign-in not enabled here — use username & password below)')}</div>}
         </div>
 
-        <div className="field">
-          <label>{tt('用户名', 'Username')} <span className="req">*</span></label>
-          <input className="input" autoCapitalize="none" value={f.username} placeholder={tt('至少 3 位', '≥ 3 characters')} onChange={(e) => set('username', e.target.value.replace(/\s/g, ''))} />
-        </div>
-        <div className="field">
-          <label>{tt('密码', 'Password')} <span className="req">*</span></label>
-          <div className="row" style={{ gap: 8 }}>
-            <input className="input" type={show ? 'text' : 'password'} value={f.password} placeholder={tt('至少 6 位', '≥ 6 characters')} onChange={(e) => set('password', e.target.value)} />
-            <button className="btn sm outline" style={{ flex: 'none' }} onClick={() => setShow(!show)}>{show ? tt('隐藏', 'Hide') : tt('显示', 'Show')}</button>
-          </div>
-        </div>
+        {/* 旧版：用户名 + 密码（默认折叠；Google 未启用时自动展开） */}
+        {googleReady && !showPwd && (
+          <button className="btn ghost block" style={{ marginTop: 14 }} onClick={() => setShowPwd(true)}>
+            {tt('用账号密码登录（旧账号）', 'Use username & password (legacy)')}
+          </button>
+        )}
 
-        {mode === 'register' && <>
-          <div className="field">
-            <label>{tt('确认密码', 'Confirm password')} <span className="req">*</span></label>
-            <input className="input" type={show ? 'text' : 'password'} value={f.confirm} onChange={(e) => set('confirm', e.target.value)} />
-            {f.confirm && f.confirm !== f.password && <div className="tiny" style={{ color: 'var(--red)', marginTop: 6 }}>{tt('两次密码不一致', 'Passwords do not match')}</div>}
-          </div>
-          <div className="field">
-            <label>{tt('称呼', 'Your name')} <span className="tiny muted">（{tt('女佣端可见，可选', 'shown to helper, optional')}）</span></label>
-            <input className="input" value={f.full_name} placeholder={tt('例如 高先生 / Madam Gao', 'e.g. Madam Gao')} onChange={(e) => set('full_name', e.target.value)} />
-          </div>
-          <div className="field">
-            <label>{tt('家庭名称', 'Family name')} <span className="tiny muted">（{tt('可选', 'optional')}）</span></label>
-            <input className="input" value={f.family_name} placeholder={tt('例如 高先生家', 'e.g. Gao Family')} onChange={(e) => set('family_name', e.target.value)} />
-          </div>
-        </>}
+        {(!googleReady || showPwd) && (
+          <div style={{ marginTop: 16 }}>
+            <div className="seg" style={{ marginBottom: 16 }}>
+              <button className={'opt' + (mode === 'login' ? ' on' : '')} onClick={() => setMode('login')}>{tt('登录', 'Log in')}</button>
+              <button className={'opt' + (mode === 'register' ? ' on' : '')} onClick={() => setMode('register')}>{tt('注册', 'Sign up')}</button>
+            </div>
 
-        {/* Google 登录（仅服务器配置了 GOOGLE_CLIENT_ID 时显示）*/}
-        <div ref={gbtn} style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }} />
+            <div className="field">
+              <label>{tt('用户名', 'Username')} <span className="req">*</span></label>
+              <input className="input" autoCapitalize="none" value={f.username} placeholder={tt('至少 3 位', '≥ 3 characters')} onChange={(e) => set('username', e.target.value.replace(/\s/g, ''))} />
+            </div>
+            <div className="field">
+              <label>{tt('密码', 'Password')} <span className="req">*</span></label>
+              <div className="row" style={{ gap: 8 }}>
+                <input className="input" type={show ? 'text' : 'password'} value={f.password} placeholder={tt('至少 6 位', '≥ 6 characters')} onChange={(e) => set('password', e.target.value)} />
+                <button className="btn sm outline" style={{ flex: 'none' }} onClick={() => setShow(!show)}>{show ? tt('隐藏', 'Hide') : tt('显示', 'Show')}</button>
+              </div>
+            </div>
+
+            {mode === 'register' && <>
+              <div className="field">
+                <label>{tt('确认密码', 'Confirm password')} <span className="req">*</span></label>
+                <input className="input" type={show ? 'text' : 'password'} value={f.confirm} onChange={(e) => set('confirm', e.target.value)} />
+                {f.confirm && f.confirm !== f.password && <div className="tiny" style={{ color: 'var(--red)', marginTop: 6 }}>{tt('两次密码不一致', 'Passwords do not match')}</div>}
+              </div>
+              <div className="field">
+                <label>{tt('称呼', 'Your name')} <span className="tiny muted">（{tt('女佣端可见，可选', 'shown to helper, optional')}）</span></label>
+                <input className="input" value={f.full_name} placeholder={tt('例如 高先生 / Madam Gao', 'e.g. Madam Gao')} onChange={(e) => set('full_name', e.target.value)} />
+              </div>
+              <div className="field">
+                <label>{tt('家庭名称', 'Family name')} <span className="tiny muted">（{tt('可选', 'optional')}）</span></label>
+                <input className="input" value={f.family_name} placeholder={tt('例如 高先生家', 'e.g. Gao Family')} onChange={(e) => set('family_name', e.target.value)} />
+              </div>
+            </>}
+
+            <button className="btn primary block" style={{ marginTop: 8 }} disabled={busy} onClick={submit}>
+              {busy ? '…' : (mode === 'login' ? tt('登录', 'Log in') : tt('注册并进入', 'Sign up'))}
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="actionbar" style={{ flexDirection: 'column', gap: 10 }}>
-        <button className="btn primary block" disabled={busy} onClick={submit}>
-          {busy ? '…' : (mode === 'login' ? tt('登录', 'Log in') : tt('注册并进入', 'Sign up'))}
-        </button>
+      <div className="actionbar">
         <button className="btn outline block" onClick={() => nav('/join')}>🧹 {tt('我是女佣，用邀请码加入', "I'm a helper — join with invite code")}</button>
       </div>
     </>
