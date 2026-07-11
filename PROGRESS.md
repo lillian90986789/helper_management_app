@@ -94,6 +94,11 @@
 - **小票 bug**：雇主查看采购单时小票显示成一串字符——`ShoppingPage.jsx` 小票区把 `receipt_image`(URL) 当文本塞进 `.thumb lg`。改为 `isImgAvatar` 判断→渲染成 `<img>`（完整显示、maxHeight 340、点击 window.open 看大图）；非图片才回退文本。（女佣端 ShoppingSettle 本就用 isImg 正确渲染。）
 - **休息日选择器**：原「≥2 名女佣才显示」→ 只有一名时看不到、不知如何选。改为始终显示「为哪位女佣设置休息日」卡片（0 名提示先邀请，多名给使用说明）。
 
+### 2026-07-11 今日菜单只显示当天
+- **需求**：今日菜单只展示 `meal_date=今天` 的，不显示昨天/往日的。
+- **改法**：`/dashboard/maid`、`/dashboard/employer` 的 meals 查询和 `/meals` 都加 `AND meal_date=today`。（meal_date 在所有 MealOrder INSERT 处都已赋值，过滤安全。）
+- 测试 `test_today_menu_only.mjs`（5/5）：今天的显示、昨天的不显示、做饭页仅 1 条。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

@@ -1116,7 +1116,7 @@ api.get('/dashboard/employer', (req, res) => {
   const cnt = (s) => tasks.filter((t) => t.status === s).length;
   const summary = { total: tasks.length, done: cnt('done'), in_progress: cnt('in_progress'),
     incomplete: cnt('incomplete'), pending_review: cnt('pending_review'), todo: cnt('today_todo') };
-  const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=?').all(famId(req));
+  const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=? AND mo.meal_date=?').all(famId(req), date);
   const shopping = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC LIMIT 1').get(famId(req)) || null;
   const items = shopping ? db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(shopping.shopping_list_id) : [];
   const shoppingSummary = {
@@ -1138,7 +1138,7 @@ api.get('/dashboard/maid', async (req, res) => {
   const tasks = db.prepare("SELECT * FROM DailyTask WHERE task_date=? AND family_id=? AND status != 'canceled' ORDER BY sort_order, daily_task_id").all(date, famId(req)).map(dailyWith);
   const done = tasks.filter(t=>['done','skipped'].includes(t.status)).length;
   const next = tasks.find(t=>['today_todo','in_progress','returned'].includes(t.status));
-  const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image, r.recipe_type FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=?').all(famId(req));
+  const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image, r.recipe_type FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=? AND mo.meal_date=?').all(famId(req), date);
   // 「今日采购」只显示进行中的采购单：已完成（雇主已确认 confirmed）或已取消（canceled）不再显示
   const shopping = db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND status NOT IN ('confirmed','canceled') ORDER BY shopping_list_id DESC LIMIT 1").get(famId(req)) || null;
   const items = shopping ? db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(shopping.shopping_list_id) : [];
@@ -1273,7 +1273,7 @@ function mealWith(m) {
   m.recipe = recipeWith(db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(m.recipe_id));
   return m;
 }
-api.get('/meals', async (req, res) => { const ms = db.prepare('SELECT * FROM MealOrder WHERE family_id=? ORDER BY start_time').all(famId(req)).map(mealWith); await localizeRecipes(req, ms.map(m=>m.recipe)); res.json(ms); });
+api.get('/meals', async (req, res) => { const ms = db.prepare('SELECT * FROM MealOrder WHERE family_id=? AND meal_date=? ORDER BY start_time').all(famId(req), todayYmd()).map(mealWith); await localizeRecipes(req, ms.map(m=>m.recipe)); res.json(ms); });
 api.get('/meals/:id', async (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
   if (!owns(req, m)) return res.status(404).json({ error:'not found' });
