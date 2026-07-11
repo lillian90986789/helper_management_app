@@ -109,7 +109,7 @@ export default function Me({ role }) {
   ];
   const maidItems = [
     ['📅 ' + t('workSchedule')], ['🛌 ' + (lang!=='zh'?'Rest Days':'休息日')], ['✅ ' + (lang!=='zh'?'Completed Tasks':'已完成任务')],
-    ['🧾 ' + t('purchaseHistory')], ['📖 ' + (lang!=='zh'?'House Manual':'家庭操作手册')], ['📞 ' + (lang!=='zh'?'Emergency Contact':'紧急联系人')],
+    ['🧾 ' + t('purchaseHistory')], ['📖 ' + (lang!=='zh'?'House Manual':'家庭操作手册')],
   ];
   const items = isEmp ? empItems : maidItems;
 
