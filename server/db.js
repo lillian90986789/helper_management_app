@@ -404,7 +404,7 @@ addCol('User', 'last_login_at', 'TEXT');
 // Notification → 可定向到具体用户（如休息日只通知对应女佣）；为空表示按 to_role 群发
 addCol('Notification', 'to_user_id', 'INTEGER');
 // Family → 采购模块：可配置消费税率 GST（第 8.3 节风格，家庭级设置）
-addCol('Family', 'gst_rate', 'REAL DEFAULT 0.09');
+addCol('Family', 'gst_rate', 'REAL DEFAULT 0');   // 消费税默认 0%（雇主可在「我的」页调整）
 // Family → 对应 PRD Family
 addCol('Family', 'owner_user_id', 'INTEGER');
 addCol('Family', 'family_avatar_url', 'TEXT');
@@ -538,6 +538,16 @@ CREATE TABLE IF NOT EXISTS MomEvent (
   updated_at TEXT DEFAULT (datetime('now','localtime'))
 );
 `);
+
+// 一次性：把此前加列时系统回填的 9% GST 重置为 0%（消费税默认 0%）。用 AppConfig 标记只跑一次，
+// 之后雇主主动设成 9% 也不会被再次清零。
+try {
+  const done = db.prepare("SELECT 1 FROM AppConfig WHERE config_key='gst_default_zero_v1'").get();
+  if (!done) {
+    db.prepare('UPDATE Family SET gst_rate=0 WHERE gst_rate=0.09').run();
+    db.prepare("INSERT OR REPLACE INTO AppConfig (config_key, config_value) VALUES ('gst_default_zero_v1','1')").run();
+  }
+} catch (e) { /* noop */ }
 
 // 一个 Gmail 只能对应一个账号（空邮箱不限，女佣可无邮箱）。已有重复时忽略建索引，应用层仍会查重。
 try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON User(email) WHERE email IS NOT NULL AND email<>''"); } catch (e) { /* noop */ }

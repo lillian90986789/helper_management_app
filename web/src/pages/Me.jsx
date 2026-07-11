@@ -59,7 +59,7 @@ export default function Me({ role }) {
       const users = b.users || [];
       setFamily(b.family?.family_name || (en ? 'My Family' : '我的家庭'));
       if (isEmp) {
-        setGstPct(Math.round((b.family?.gst_rate ?? 0.09) * 100 * 100) / 100);
+        setGstPct(Math.round((b.family?.gst_rate ?? 0) * 100 * 100) / 100);
         let emp = null; try { emp = JSON.parse(localStorage.getItem('hf_employer') || 'null'); } catch {}
         // 只有存的身份在当前家庭里存在才用它，否则回退到家庭雇主（避免更新已删除的用户导致 404）
         const dbUser = emp && users.find((u) => u.user_id === emp.user_id && u.role === 'employer');

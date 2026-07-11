@@ -129,6 +129,10 @@
 - **Google 按钮不显示（线上）**：查线上 /api/config 其实已配 google_client_id；根因是**微信/App 内置浏览器拦截 Google GSI 脚本**（Google 禁止 webview 内 OAuth）。`EmployerAuth` 加 `googleConfigured` 状态：配了但 GSI 加载失败时提示「请用 Safari/Chrome 打开本页」，而非误导的「本环境未启用」。真正解法是用系统浏览器打开。（女佣端同理）
 - **MOM 返回 bug**：`MomEvents` 返回用 `nav('/members')` 会多压一层历史，导致女佣管理页返回不到「我的」。改为 `nav(-1)`。
 
+### 2026-07-11 消费税(GST)默认改 0%
+- 原默认 9%（Family.gst_rate DEFAULT 0.09 + DEFAULT_GST_RATE 0.09 + 前端兜底 0.09）。全部改 0。
+- 已有家庭因加列时被回填 0.09：db.js 加一次性迁移 `UPDATE Family SET gst_rate=0 WHERE gst_rate=0.09`，用 AppConfig `gst_default_zero_v1` 标记只跑一次（之后雇主主动设 9% 不会被再清零）。雇主仍可在「我的」页调整。test_gst_zero 5/5。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）
