@@ -111,6 +111,16 @@
 - **权限**：创建/编辑/删除/确认仅雇主；女佣只能 ack/helper-done 自己的。
 - 测试 `test_mom_events.mjs`（18/18）：创建/展示规则/权限/ack/helper-done/confirm/通知/重复生成全覆盖。回归 7/7、7/7、5/5、14/14。
 
+### 2026-07-11 统一当地时区（新加坡）
+- **问题**：线上 Docker 默认 UTC，导致「今日」判断、时间戳/日志都比新加坡时间差 8 小时。
+- **改法（统一存"当地墙钟时间"+进程 TZ=SGT，自洽）**：
+  - `TZ=Asia/Singapore`：`server/db.js` 顶部 `process.env.TZ ||= 'Asia/Singapore'`（在任何 Date/SQLite 之前）+ `server/index.js` 兜底；`Dockerfile` 装 `tzdata` + `ENV TZ`；两个 compose 加 `TZ=Asia/Singapore`。→ 修好所有 `new Date()` 的 todayYmd/ymd/「今日」逻辑。
+  - SQLite `datetime('now')` 全局改 `datetime('now','localtime')`（db.js+index.js，66 处），created_at/updated_at/last_login/审计/任务日志/通知等时间戳存 SGT；两侧比较仍一致（throttle/cleanup 也都是 localtime）。
+  - JS 加 `localStamp()`（`toLocaleString('sv-SE')` → `YYYY-MM-DD HH:MM:SS` SGT），任务/采购/休息日 3 处 `const now` 改用它。
+  - 订阅/验证码/邀请的 `toISOString()` **保留 UTC**：它们是 JS 里按 `.getTime()` 绝对时刻比较，进程 TZ=SGT 后依然正确（`subView` 验证过）。
+- **注意**：本次之前已入库的行是 UTC，显示会偏 8h；新数据起正确。前端无改动（浏览器本地 tz + 直接 slice 已存的 SGT 值）。
+- 测试 `test_timezone.mjs`（8/8：TZ/格式/SGT 小时/JS 与 SQL 一致/订阅比较正常）；全量回归 9 套全绿。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

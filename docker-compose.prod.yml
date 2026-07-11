@@ -11,6 +11,8 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/app/data
+      # 当地时区（新加坡）：影响"今日"判断与所有时间戳/日志显示
+      - TZ=Asia/Singapore
       # 小票 OCR 用的 Key。把它写进同目录的 .env 文件里（ANTHROPIC_API_KEY=sk-ant-xxx），
       # 不填则走「模拟识别」。.env 已被 .gitignore 忽略，不会进 git。
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

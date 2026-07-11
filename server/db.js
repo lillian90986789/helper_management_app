@@ -3,6 +3,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
 
+// 统一时区为当地时区（默认新加坡）。必须在任何 Date / SQLite 本地时间取值之前设置。
+// 生产环境同时由 Docker 的 TZ 环境变量设定（更权威）；此处兜底本地/未设 TZ 的情况。
+process.env.TZ = process.env.TZ || 'Asia/Singapore';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // 数据库文件存放在 data/ 目录，便于 NAS 上挂载为持久卷
 const dataDir = process.env.DATA_DIR || join(__dirname, '..', 'data');
@@ -24,7 +28,7 @@ CREATE TABLE IF NOT EXISTS Family (
   default_language TEXT DEFAULT 'zh',
   invite_code TEXT,
   creator_user_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now','localtime')),
   status TEXT DEFAULT 'active'
 );
 
@@ -37,7 +41,7 @@ CREATE TABLE IF NOT EXISTS User (
   role TEXT NOT NULL,                 -- employer | member | maid
   preferred_language TEXT DEFAULT 'zh',
   account_status TEXT DEFAULT 'active',
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS FamilyMember (
@@ -46,7 +50,7 @@ CREATE TABLE IF NOT EXISTS FamilyMember (
   user_id INTEGER,
   role TEXT,
   permissions TEXT,
-  join_date TEXT DEFAULT (datetime('now')),
+  join_date TEXT DEFAULT (datetime('now','localtime')),
   status TEXT DEFAULT 'active'
 );
 
@@ -79,7 +83,7 @@ CREATE TABLE IF NOT EXISTS Task (
   status TEXT DEFAULT 'todo',        -- draft|todo|received|in_progress|paused|pending_review|returned|done|overdue|skip_requested|skipped|canceled
   note TEXT,
   creator_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now','localtime')),
   completed_at TEXT
 );
 
@@ -100,7 +104,7 @@ CREATE TABLE IF NOT EXISTS TaskAttachment (
   uploader_id INTEGER,
   file_type TEXT,
   file_url TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS TaskLog (
@@ -110,7 +114,7 @@ CREATE TABLE IF NOT EXISTS TaskLog (
   action TEXT,
   from_status TEXT,
   to_status TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 -- ===== 任务清单模块（修改版）：按星期重复 =====
@@ -134,8 +138,8 @@ CREATE TABLE IF NOT EXISTS TaskTemplate (
   sort_order INTEGER DEFAULT 0,
   status TEXT DEFAULT 'active',      -- active(启用) | paused(已暂停) | deleted(已删除)
   creator_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  updated_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS TaskTemplateChecklist (
   checklist_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,7 +176,7 @@ CREATE TABLE IF NOT EXISTS DailyTask (
   completed_at TEXT,
   reviewer_id INTEGER,
   reject_reason TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS DailyTaskChecklist (
   checklist_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,7 +193,7 @@ CREATE TABLE IF NOT EXISTS DailyTaskAttachment (
   uploader_id INTEGER,
   file_type TEXT,
   file_url TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS DailyTaskLog (
   log_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,7 +202,7 @@ CREATE TABLE IF NOT EXISTS DailyTaskLog (
   action TEXT,
   from_status TEXT,
   to_status TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS Recipe (
@@ -218,7 +222,7 @@ CREATE TABLE IF NOT EXISTS Recipe (
   favorite INTEGER DEFAULT 0,
   status TEXT DEFAULT 'published',
   creator_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS RecipeIngredient (
@@ -258,7 +262,7 @@ CREATE TABLE IF NOT EXISTS MealOrder (
   status TEXT DEFAULT 'to_receive',  -- draft|to_receive|received|checking|ingredients_ready|ingredients_short|to_start|preparing|cooking|pending_review|done|canceled|returned
   notes TEXT,
   result_image TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS ShoppingList (
@@ -274,7 +278,7 @@ CREATE TABLE IF NOT EXISTS ShoppingList (
   payment_method TEXT,
   other_fee REAL DEFAULT 0,
   creator_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS ShoppingItem (
@@ -316,7 +320,7 @@ CREATE TABLE IF NOT EXISTS Notification (
   ref_id INTEGER,
   to_role TEXT,
   is_read INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 
 -- ===== 雇主注册功能 =====
@@ -329,7 +333,7 @@ CREATE TABLE IF NOT EXISTS VerificationCode (
   expires_at TEXT,
   verified INTEGER DEFAULT 0,
   attempts INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 -- 注册草稿：支持"中断与恢复"（PRD 16），按 contact 保存每一步已完成数据
 CREATE TABLE IF NOT EXISTS RegistrationDraft (
@@ -340,8 +344,8 @@ CREATE TABLE IF NOT EXISTS RegistrationDraft (
   data TEXT,                          -- JSON：累积的注册数据
   user_id INTEGER,                    -- 提交后落库的雇主账号
   family_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  updated_at TEXT DEFAULT (datetime('now','localtime'))
 );
 -- 女佣休息日（任务清单模块：日历查看 + 休息日设置，第 9.3 节 HelperRestDay）
 CREATE TABLE IF NOT EXISTS HelperRestDay (
@@ -355,8 +359,8 @@ CREATE TABLE IF NOT EXISTS HelperRestDay (
   note TEXT,
   status TEXT DEFAULT 'ACTIVE',      -- ACTIVE(已设置) | CANCELED(已取消)
   created_by INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  updated_at TEXT DEFAULT (datetime('now','localtime')),
   notified_at TEXT
 );
 -- 女佣邀请（PRD 20 FamilyInvitation）
@@ -374,7 +378,7 @@ CREATE TABLE IF NOT EXISTS FamilyInvitation (
   status TEXT DEFAULT 'pending',     -- pending(待接受)|viewed|accepted|expired|revoked|failed
   expires_at TEXT,
   accepted_at TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 `);
 
@@ -442,7 +446,7 @@ CREATE TABLE IF NOT EXISTS FamilySubscription (
   current_period_end_at TEXT,
   access_status TEXT DEFAULT 'ACTIVE',        -- ACTIVE|LOCKED
   last_payment_order_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now','localtime')),
   updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS PaymentOrder (
@@ -460,7 +464,7 @@ CREATE TABLE IF NOT EXISTS PaymentOrder (
   paid_at TEXT,
   confirmed_by TEXT,                          -- 管理员确认人
   note TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now','localtime')),
   updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS SubscriptionHistory (
@@ -473,7 +477,7 @@ CREATE TABLE IF NOT EXISTS SubscriptionHistory (
   plan_id TEXT,
   reason TEXT,
   payment_order_id INTEGER,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS AppConfig (
   config_key TEXT PRIMARY KEY,
@@ -485,7 +489,7 @@ CREATE TABLE IF NOT EXISTS Translation (
   target_lang TEXT,
   source_text TEXT,
   translated_text TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now','localtime')),
   PRIMARY KEY (target_lang, source_text)
 );
 CREATE TABLE IF NOT EXISTS AdminAuditLog (
@@ -499,7 +503,7 @@ CREATE TABLE IF NOT EXISTS AdminAuditLog (
   new_value TEXT,
   reason TEXT,
   ip_address TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS AdminNote (
   note_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -507,7 +511,7 @@ CREATE TABLE IF NOT EXISTS AdminNote (
   family_id INTEGER,
   admin_id TEXT,
   note_content TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 `);
 
@@ -530,8 +534,8 @@ CREATE TABLE IF NOT EXISTS MomEvent (
   completed_at TEXT,                 -- 雇主确认完成时间
   last_reminded_date TEXT,           -- 上次生成提醒的日期（去重每日提醒）
   created_by INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  updated_at TEXT DEFAULT (datetime('now','localtime'))
 );
 `);
 

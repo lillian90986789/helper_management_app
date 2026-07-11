@@ -29,7 +29,7 @@ api.use((req, res, next) => {
     if (fm) {
       req.userId = uid; req.familyId = fm.family_id;
       // 记录最后活跃时间（雇主+女佣通用，1 小时节流，供 3 个月不活跃清理用）
-      db.prepare("UPDATE User SET last_login_at=datetime('now') WHERE user_id=? AND (last_login_at IS NULL OR last_login_at < datetime('now','-1 hour'))").run(uid);
+      db.prepare("UPDATE User SET last_login_at=datetime('now','localtime') WHERE user_id=? AND (last_login_at IS NULL OR last_login_at < datetime('now','localtime','-1 hour'))").run(uid);
     }
   }
   // 管理后台走独立的管理员密钥鉴权（adminGuard），此处放行家庭登录校验
@@ -86,6 +86,10 @@ const planDiscount = (id) => {   // 折扣百分比（% off），0=无折扣
 const planPrice = (id) => +(planOrig(id) * (1 - planDiscount(id) / 100)).toFixed(2);   // 实收价（折后）
 const plan = (id) => { const d = PLAN_DEFS[id]; return d ? { ...d, original_price: planOrig(id), discount_percent: planDiscount(id), price: planPrice(id) } : null; };
 const PLANS = new Proxy({}, { get: (_, k) => plan(k) });   // 兼容 PLANS[id] 写法，价格实时取
+// 当地时区（默认新加坡）。db.js 已设 process.env.TZ；这里再兜底一次，确保 new Date()/localStamp 一致。
+process.env.TZ = process.env.TZ || 'Asia/Singapore';
+// 生成"当地墙钟时间"字符串 YYYY-MM-DD HH:MM:SS（与 SQLite datetime('now','localtime') 同格式，便于比较与显示）
+const localStamp = (d = new Date()) => d.toLocaleString('sv-SE');
 // 加自然月（末日对齐：1/31 + 1月 → 2/28）
 function addMonths(date, n) {
   const d = new Date(date); const day = d.getDate();
@@ -94,8 +98,8 @@ function addMonths(date, n) {
   return d;
 }
 const getConfig = (k) => { const r = db.prepare('SELECT config_value FROM AppConfig WHERE config_key=?').get(k); return r ? r.config_value : null; };
-const setConfig = (k, v) => db.prepare(`INSERT INTO AppConfig (config_key,config_value,updated_at) VALUES (?,?,datetime('now'))
-  ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, updated_at=datetime('now')`).run(k, String(v ?? ''));
+const setConfig = (k, v) => db.prepare(`INSERT INTO AppConfig (config_key,config_value,updated_at) VALUES (?,?,datetime('now','localtime'))
+  ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, updated_at=datetime('now','localtime')`).run(k, String(v ?? ''));
 // ===== 机器翻译（Google Translate，按需 + 缓存；未配 Key 则回退原文）=====
 const LANGS = ['zh', 'en', 'id', 'my'];
 const reqLang = (req) => { const l = req.headers['x-lang']; return LANGS.includes(l) ? l : 'zh'; };
@@ -194,7 +198,7 @@ function ensureSubscription(familyId) {
   if (!s) {
     const now = new Date();
     db.prepare(`INSERT INTO FamilySubscription (family_id, plan_id, status, trial_start_at, trial_end_at, access_status, updated_at)
-      VALUES (?, 'trial', 'TRIAL_ACTIVE', ?, ?, 'ACTIVE', datetime('now'))`).run(familyId, now.toISOString(), addMonths(now, 1).toISOString());
+      VALUES (?, 'trial', 'TRIAL_ACTIVE', ?, ?, 'ACTIVE', datetime('now','localtime'))`).run(familyId, now.toISOString(), addMonths(now, 1).toISOString());
     s = db.prepare('SELECT * FROM FamilySubscription WHERE family_id=?').get(familyId);
   }
   return s;
@@ -214,7 +218,7 @@ function subView(familyId) {
   else status = 'TRIAL_ACTIVE';
   const access_status = active ? 'ACTIVE' : 'LOCKED';
   if (s.status !== status || s.access_status !== access_status)
-    db.prepare("UPDATE FamilySubscription SET status=?, access_status=?, updated_at=datetime('now') WHERE family_id=?").run(status, access_status, familyId);
+    db.prepare("UPDATE FamilySubscription SET status=?, access_status=?, updated_at=datetime('now','localtime') WHERE family_id=?").run(status, access_status, familyId);
   return { subscription_id: s.subscription_id, family_id: familyId, plan_id: s.plan_id, is_trial: !paid,
     status, access_status, trial_start_at: s.trial_start_at, trial_end_at: s.trial_end_at,
     current_period_start_at: s.current_period_start_at, current_period_end_at: s.current_period_end_at,
@@ -232,9 +236,9 @@ function activateSubscription(order, opts = {}) {
   const base = latest > now.getTime() ? new Date(latest) : now;
   const newEnd = addMonths(base, plan.months);
   const tx = db.transaction(() => {
-    db.prepare("UPDATE PaymentOrder SET status='PAID', paid_at=datetime('now'), confirmed_by=?, updated_at=datetime('now') WHERE payment_order_id=?").run(opts.by || 'super', order.payment_order_id);
+    db.prepare("UPDATE PaymentOrder SET status='PAID', paid_at=datetime('now','localtime'), confirmed_by=?, updated_at=datetime('now','localtime') WHERE payment_order_id=?").run(opts.by || 'super', order.payment_order_id);
     db.prepare(`UPDATE FamilySubscription SET plan_id=?, status='ACTIVE', access_status='ACTIVE',
-        current_period_start_at=?, current_period_end_at=?, last_payment_order_id=?, updated_at=datetime('now') WHERE family_id=?`)
+        current_period_start_at=?, current_period_end_at=?, last_payment_order_id=?, updated_at=datetime('now','localtime') WHERE family_id=?`)
       .run(plan.plan_id, base.toISOString(), newEnd.toISOString(), order.payment_order_id, order.family_id);
     db.prepare(`INSERT INTO SubscriptionHistory (family_id, old_status, new_status, old_expire_at, new_expire_at, plan_id, reason, payment_order_id)
       VALUES (?,?,?,?,?,?,?,?)`).run(order.family_id, s.status, 'ACTIVE', latest ? new Date(latest).toISOString() : null, newEnd.toISOString(), plan.plan_id, opts.reason || 'payment_confirmed', order.payment_order_id);
@@ -303,13 +307,13 @@ api.post('/auth/google', async (req, res) => {
     isNew = true;
     family = createEmptyFamily((info.name || email.split('@')[0]) + ' 的家');
     const uid = db.prepare(`INSERT INTO User (name, avatar, email, role, login_method, preferred_language, account_status, registration_status, updated_at, last_login_at)
-      VALUES (?,?,?, 'employer', 'google', 'zh', 'active', 'COMPLETED', datetime('now'), datetime('now'))`)
+      VALUES (?,?,?, 'employer', 'google', 'zh', 'active', 'COMPLETED', datetime('now','localtime'), datetime('now','localtime'))`)
       .run(info.name || email.split('@')[0], '👤', email).lastInsertRowid;
     db.prepare("INSERT INTO FamilyMember (family_id, user_id, role, permissions, status) VALUES (?,?,?,?,?)")
       .run(family.family_id, uid, 'employer', 'owner', 'active');
     u = db.prepare('SELECT * FROM User WHERE user_id=?').get(uid);
   } else {
-    db.prepare("UPDATE User SET name=COALESCE(NULLIF(name,''), ?), login_method='google', last_login_at=datetime('now') WHERE user_id=?")
+    db.prepare("UPDATE User SET name=COALESCE(NULLIF(name,''), ?), login_method='google', last_login_at=datetime('now','localtime') WHERE user_id=?")
       .run(info.name || null, u.user_id);
     u = db.prepare('SELECT * FROM User WHERE user_id=?').get(u.user_id);
     const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(u.user_id);
@@ -338,7 +342,7 @@ api.post('/auth/google/bind', async (req, res) => {
   // 该 Gmail 若已绑到别的账号则拒绝，避免两个账号抢同一邮箱
   const taken = db.prepare('SELECT user_id FROM User WHERE email=? AND user_id<>?').get(email, req.userId);
   if (taken) return res.status(409).json({ error: 'email_taken' });
-  db.prepare("UPDATE User SET email=?, login_method='google', updated_at=datetime('now') WHERE user_id=?").run(email, req.userId);
+  db.prepare("UPDATE User SET email=?, login_method='google', updated_at=datetime('now','localtime') WHERE user_id=?").run(email, req.userId);
   res.json({ ok: true, email });
 });
 
@@ -375,21 +379,21 @@ api.post('/auth/google/join', async (req, res) => {
     const existing = db.prepare("SELECT * FROM User WHERE email=? AND role='maid'").get(email);
     if (existing) {
       uid = existing.user_id;
-      db.prepare("UPDATE User SET login_method='google', preferred_language=COALESCE(preferred_language,?), account_status='active', last_login_at=datetime('now'), updated_at=datetime('now') WHERE user_id=?")
+      db.prepare("UPDATE User SET login_method='google', preferred_language=COALESCE(preferred_language,?), account_status='active', last_login_at=datetime('now','localtime'), updated_at=datetime('now','localtime') WHERE user_id=?")
         .run(lang, uid);
     } else {
       // 认领本家庭内「无邮箱、默认女佣（最小 id）」的旧账号——雇主的任务/休息日正是绑在它上面
       const legacy = db.prepare("SELECT u.* FROM User u JOIN FamilyMember fm ON fm.user_id=u.user_id WHERE fm.family_id=? AND u.role='maid' AND fm.status='active' AND (u.email IS NULL OR u.email='') ORDER BY u.user_id LIMIT 1").get(family.family_id);
       if (legacy) {
         uid = legacy.user_id;
-        db.prepare("UPDATE User SET email=?, login_method='google', preferred_language=COALESCE(NULLIF(preferred_language,''),?), account_status='active', last_login_at=datetime('now'), updated_at=datetime('now') WHERE user_id=?")
+        db.prepare("UPDATE User SET email=?, login_method='google', preferred_language=COALESCE(NULLIF(preferred_language,''),?), account_status='active', last_login_at=datetime('now','localtime'), updated_at=datetime('now','localtime') WHERE user_id=?")
           .run(email, lang, uid);
       } else {
         isNew = true;
         const pool = AVATARS.maid;
         const avatar = pool[Math.floor(Math.random() * pool.length)];
         uid = db.prepare(`INSERT INTO User (name, avatar, email, role, login_method, preferred_language, account_status, last_login_at, updated_at)
-          VALUES (?,?,?, 'maid', 'google', ?, 'active', datetime('now'), datetime('now'))`)
+          VALUES (?,?,?, 'maid', 'google', ?, 'active', datetime('now','localtime'), datetime('now','localtime'))`)
           .run(gname, avatar, email, lang).lastInsertRowid;
       }
     }
@@ -430,7 +434,7 @@ api.post('/auth/google/maid-login', async (req, res) => {
   const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(u.user_id);
   if (!fm) return res.status(404).json({ error: 'maid_not_in_family' });   // 账号存在但已被移出家庭
   const family = db.prepare('SELECT family_id, family_name FROM Family WHERE family_id=?').get(fm.family_id);
-  db.prepare("UPDATE User SET login_method='google', last_login_at=datetime('now') WHERE user_id=?").run(u.user_id);
+  db.prepare("UPDATE User SET login_method='google', last_login_at=datetime('now','localtime') WHERE user_id=?").run(u.user_id);
   res.json({ token: signToken(u.user_id), user_id: u.user_id, name: u.name, avatar: u.avatar, email,
     family_id: family.family_id, family_name: family.family_name });
 });
@@ -499,7 +503,7 @@ api.patch('/users/:id', (req, res) => {
   const b = req.body;
   if (b.name !== undefined && !String(b.name).trim()) return res.status(400).json({ error: 'name_required' });
   db.prepare(`UPDATE User SET name=COALESCE(@name,name), display_name=COALESCE(@display_name,display_name), avatar=COALESCE(@avatar,avatar),
-      gender=COALESCE(@gender,gender), birth_date=COALESCE(@birth_date,birth_date), updated_at=datetime('now') WHERE user_id=@id`)
+      gender=COALESCE(@gender,gender), birth_date=COALESCE(@birth_date,birth_date), updated_at=datetime('now','localtime') WHERE user_id=@id`)
     .run({ name: b.name !== undefined ? String(b.name).trim() : null, display_name: b.display_name ?? null, avatar: b.avatar ?? null,
       gender: b.gender ?? null, birth_date: b.birth_date ?? null, id: u.user_id });
   res.json(db.prepare('SELECT user_id,name,display_name,avatar,role,preferred_language,gender,birth_date FROM User WHERE user_id=?').get(u.user_id));
@@ -524,7 +528,7 @@ api.post('/members/:id/remove', (req, res) => {
   db.transaction(() => {
     db.prepare('UPDATE FamilyMember SET status=? WHERE family_member_id=?').run('removed', fm.family_member_id);
     // 后台同步：账号标记 removed，释放绑定的 Gmail（email 置空），该 Gmail 之后可重新注册
-    db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now') WHERE user_id=?").run(fm.user_id);
+    db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now','localtime') WHERE user_id=?").run(fm.user_id);
   })();
   res.json({ ok: true });
 });
@@ -555,7 +559,7 @@ function saveDraft(channel, contact, status, data) {
   const ex = draftByContact(contact);
   const json = JSON.stringify(data || {});
   if (ex) {
-    db.prepare("UPDATE RegistrationDraft SET channel=?, registration_status=?, data=?, updated_at=datetime('now') WHERE contact=?")
+    db.prepare("UPDATE RegistrationDraft SET channel=?, registration_status=?, data=?, updated_at=datetime('now','localtime') WHERE contact=?")
       .run(channel, status, json, contact);
   } else {
     db.prepare('INSERT INTO RegistrationDraft (channel,contact,registration_status,data) VALUES (?,?,?,?)').run(channel, contact, status, json);
@@ -639,7 +643,7 @@ api.post('/auth/register', (req, res) => {
     const uid = db.prepare(`INSERT INTO User
       (name, avatar, phone, phone_country_code, email, role, login_method, password_hash, display_name, gender,
        preferred_language, notification_language, country, timezone, default_currency, account_status, registration_status, updated_at)
-      VALUES (@name,@avatar,@phone,@cc,@email,'employer',@lm,@pwd,@dn,@gender,@lang,@nlang,@country,@tz,@cur,'active','COMPLETED',datetime('now'))`)
+      VALUES (@name,@avatar,@phone,@cc,@email,'employer',@lm,@pwd,@dn,@gender,@lang,@nlang,@country,@tz,@cur,'active','COMPLETED',datetime('now','localtime'))`)
       .run({ name: b.full_name.trim(), avatar: b.avatar_url || '👨🏻‍💼',
         phone: channel === 'phone' ? contact : (b.phone || null), cc: b.phone_country_code || null,
         email: channel === 'email' ? contact : (b.email ? normEmail(b.email) : null),
@@ -650,7 +654,7 @@ api.post('/auth/register', (req, res) => {
     const inviteCode = 'HOME-' + Math.floor(1000 + Math.random() * 9000);
     const fam = db.prepare(`INSERT INTO Family
       (family_name, family_avatar_url, country, city, address, timezone, default_language, helper_language, default_currency, week_start_day, invite_code, owner_user_id, creator_user_id, status, updated_at)
-      VALUES (@fn,@fa,@country,@city,@addr,@tz,@dl,@hl,@cur,@ws,@code,@uid,@uid,'active',datetime('now'))`)
+      VALUES (@fn,@fa,@country,@city,@addr,@tz,@dl,@hl,@cur,@ws,@code,@uid,@uid,'active',datetime('now','localtime'))`)
       .run({ fn: b.family_name.trim(), fa: b.family_avatar_url || '🏠', country: b.family_country || b.country || null,
         city: b.city || null, addr: b.address || null, tz: b.family_timezone || b.timezone || null,
         dl: b.family_language || b.preferred_language || 'zh', hl: b.helper_language || 'en',
@@ -687,7 +691,7 @@ api.post('/auth/register', (req, res) => {
       invitation = db.prepare('SELECT * FROM FamilyInvitation WHERE invitation_id=?').get(invId);
     }
     // 标记草稿完成
-    db.prepare("UPDATE RegistrationDraft SET registration_status='COMPLETED', user_id=?, family_id=?, updated_at=datetime('now') WHERE contact=?").run(uid, fam, contact);
+    db.prepare("UPDATE RegistrationDraft SET registration_status='COMPLETED', user_id=?, family_id=?, updated_at=datetime('now','localtime') WHERE contact=?").run(uid, fam, contact);
     return { uid, fam, inviteCode, invitation, areaCount: areas.length };
   });
 
@@ -714,7 +718,7 @@ api.post('/auth/employer/register', (req, res) => {
     // 多租户：每个雇主注册 = 一个全新、独立、初始为空的家庭
     const family = createEmptyFamily((b.family_name || '').trim() || (fullName + '家'));
     const uid = db.prepare(`INSERT INTO User (name, username, password_hash, avatar, role, login_method, preferred_language, account_status, registration_status, updated_at, last_login_at)
-      VALUES (?,?,?, '👨🏻‍💼', 'employer', 'password', 'zh', 'active', 'COMPLETED', datetime('now'), datetime('now'))`)
+      VALUES (?,?,?, '👨🏻‍💼', 'employer', 'password', 'zh', 'active', 'COMPLETED', datetime('now','localtime'), datetime('now','localtime'))`)
       .run(fullName, username, hashPwd(password)).lastInsertRowid;
     db.prepare("INSERT INTO FamilyMember (family_id,user_id,role,permissions,status) VALUES (?,?,?,?,?)").run(family.family_id, uid, 'employer', 'owner', 'active');
     ensureSubscription(family.family_id);   // 注册即开始 1 个月免费试用
@@ -730,7 +734,7 @@ api.post('/auth/employer/login', (req, res) => {
   const password = String(req.body.password || '');
   const u = db.prepare("SELECT * FROM User WHERE username=? AND role='employer'").get(username);
   if (!u || !u.password_hash || u.password_hash !== hashPwd(password)) return res.status(401).json({ error: 'invalid_credentials' });
-  db.prepare("UPDATE User SET last_login_at=datetime('now') WHERE user_id=?").run(u.user_id);
+  db.prepare("UPDATE User SET last_login_at=datetime('now','localtime') WHERE user_id=?").run(u.user_id);
   const fm = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active' ORDER BY family_member_id LIMIT 1").get(u.user_id);
   const family = fm ? db.prepare('SELECT family_id,family_name FROM Family WHERE family_id=?').get(fm.family_id) : null;
   res.json({ ok: true, token: signToken(u.user_id), user: { user_id: u.user_id, name: u.name, avatar: u.avatar, username }, family });
@@ -819,7 +823,7 @@ api.post('/daily/:id/transition', (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
   if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
   const { to, actor_id, action, note } = req.body;
-  const now = new Date().toISOString();
+  const now = localStamp();
   const patch = { status: to, note: note ?? t.note };
   if (to === 'in_progress' && !t.started_at) patch.started_at = now;
   if (to === 'pending_review' || (to === 'done' && !t.require_approval)) patch.submitted_at = now;
@@ -947,7 +951,7 @@ api.post('/rest-days', (req, res) => {
   if (dates.length === 0) return res.status(400).json({ error: 'dates_required' });
   const handle = b.handle === 'keep' ? 'keep' : 'cancel';   // MVP：默认取消当天任务
   const notify_helper = b.notify !== false;
-  const now = new Date().toISOString();
+  const now = localStamp();
   const created = [];
   const tx = db.transaction(() => {
     for (const ds of dates) {
@@ -988,7 +992,7 @@ api.delete('/rest-days/:id', (req, res) => {
   const family = curFamily(req);
   const r = db.prepare('SELECT * FROM HelperRestDay WHERE rest_day_id=?').get(req.params.id);
   if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
-  db.prepare("UPDATE HelperRestDay SET status='CANCELED', updated_at=datetime('now') WHERE rest_day_id=?").run(r.rest_day_id);
+  db.prepare("UPDATE HelperRestDay SET status='CANCELED', updated_at=datetime('now','localtime') WHERE rest_day_id=?").run(r.rest_day_id);
   // 复活当天因休息日被取消的任务，使其重新生成
   db.prepare("DELETE FROM DailyTask WHERE task_date=? AND assignee_id=? AND status='canceled' AND is_rest_day_task=0").run(r.rest_date, r.helper_user_id);
   ensureDailyTasks(r.rest_date, famId(req));
@@ -1063,7 +1067,7 @@ api.patch('/templates/:id', (req, res) => {
   db.prepare(`UPDATE TaskTemplate SET task_name=@task_name, task_name_en=@task_name_en, description=@description, area_id=@area_id,
       assignee_id=@assignee_id, priority=@priority, estimated_duration=@estimated_duration, weekdays=@weekdays,
       require_photo=@require_photo, minimum_photo_count=@minimum_photo_count, require_note=@require_note, require_approval=@require_approval,
-      updated_at=datetime('now') WHERE task_template_id=@id`)
+      updated_at=datetime('now','localtime') WHERE task_template_id=@id`)
     .run({ task_name: b.task_name ?? tpl.task_name, task_name_en: b.task_name_en ?? tpl.task_name_en, description: b.description ?? tpl.description,
       area_id: b.area_id ?? tpl.area_id, assignee_id: b.assignee_id ?? tpl.assignee_id, priority: b.priority ?? tpl.priority,
       estimated_duration: b.estimated_duration ?? tpl.estimated_duration, weekdays: JSON.stringify(weekdays),
@@ -1324,7 +1328,7 @@ api.post('/family/settings', (req, res) => {
   }
   if (b.family_name !== undefined) {
     if (!String(b.family_name).trim()) return res.status(400).json({ error: 'family_name_required' });
-    db.prepare("UPDATE Family SET family_name=?, updated_at=datetime('now') WHERE family_id=?").run(String(b.family_name).trim(), family.family_id);
+    db.prepare("UPDATE Family SET family_name=?, updated_at=datetime('now','localtime') WHERE family_id=?").run(String(b.family_name).trim(), family.family_id);
   }
   res.json(db.prepare('SELECT * FROM Family WHERE family_id=?').get(family.family_id));
 });
@@ -1505,7 +1509,7 @@ api.post('/shopping/:id/transition', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
   if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
   const { to, employer_confirmed_total } = req.body;
-  const now = new Date().toISOString();
+  const now = localStamp();
   const view = listWith(l);
   if (to === 'pending_confirm') {
     db.prepare("UPDATE ShoppingList SET status=?, submitted_at=?, helper_entered_total=COALESCE(helper_entered_total,?), purchase_date=COALESCE(purchase_date,?) WHERE shopping_list_id=?")
@@ -1714,7 +1718,7 @@ api.patch('/mom-events/:id', (req, res) => {
   const repeat = b.repeat_rule !== undefined && ['none', 'monthly', 'yearly'].includes(b.repeat_rule) ? b.repeat_rule : e.repeat_rule;
   const helperId = b.helper_id !== undefined ? resolveHelperId(req, b.helper_id) : e.helper_user_id;
   db.prepare(`UPDATE MomEvent SET title=@title, category=@category, event_date=@event_date, remind_offset=@remind,
-      notify_helper=@notify, note=@note, repeat_rule=@repeat, helper_user_id=@helper, updated_at=datetime('now') WHERE mom_event_id=@id`)
+      notify_helper=@notify, note=@note, repeat_rule=@repeat, helper_user_id=@helper, updated_at=datetime('now','localtime') WHERE mom_event_id=@id`)
     .run({ title: b.title !== undefined ? String(b.title).trim() : e.title, category: b.category !== undefined ? b.category : e.category,
       event_date: b.event_date || e.event_date, remind, notify: b.notify_helper !== undefined ? (b.notify_helper ? 1 : 0) : e.notify_helper,
       note: b.note !== undefined ? b.note : e.note, repeat, helper: helperId, id: e.mom_event_id });
@@ -1732,14 +1736,14 @@ api.delete('/mom-events/:id', (req, res) => {
 api.post('/mom-events/:id/ack', (req, res) => {
   const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
   if (!owns(req, e) || e.helper_user_id !== req.userId) return res.status(404).json({ error: 'not found' });
-  db.prepare("UPDATE MomEvent SET helper_ack=1, updated_at=datetime('now') WHERE mom_event_id=?").run(e.mom_event_id);
+  db.prepare("UPDATE MomEvent SET helper_ack=1, updated_at=datetime('now','localtime') WHERE mom_event_id=?").run(e.mom_event_id);
   res.json(momView(db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(e.mom_event_id)));
 });
 // 女佣标记完成 → 待雇主确认，通知雇主
 api.post('/mom-events/:id/helper-done', (req, res) => {
   const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
   if (!owns(req, e) || e.helper_user_id !== req.userId) return res.status(404).json({ error: 'not found' });
-  db.prepare("UPDATE MomEvent SET status='helper_done', helper_ack=1, helper_done_at=datetime('now'), updated_at=datetime('now') WHERE mom_event_id=?").run(e.mom_event_id);
+  db.prepare("UPDATE MomEvent SET status='helper_done', helper_ack=1, helper_done_at=datetime('now','localtime'), updated_at=datetime('now','localtime') WHERE mom_event_id=?").run(e.mom_event_id);
   const maid = db.prepare('SELECT name FROM User WHERE user_id=?').get(req.userId);
   notify(e.family_id, 'mom', 'MOM 事项待确认', `${maid?.name || '女佣'} 已标记完成「${e.title}」，请确认`, 'mom', e.mom_event_id, 'employer');
   res.json(momView(db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(e.mom_event_id)));
@@ -1749,7 +1753,7 @@ api.post('/mom-events/:id/confirm', (req, res) => {
   if (curUserRole(req) !== 'employer') return res.status(403).json({ error: 'only_employer' });
   const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
   if (!owns(req, e)) return res.status(404).json({ error: 'not found' });
-  db.prepare("UPDATE MomEvent SET status='done', completed_at=datetime('now'), updated_at=datetime('now') WHERE mom_event_id=?").run(e.mom_event_id);
+  db.prepare("UPDATE MomEvent SET status='done', completed_at=datetime('now','localtime'), updated_at=datetime('now','localtime') WHERE mom_event_id=?").run(e.mom_event_id);
   if (e.repeat_rule === 'monthly' || e.repeat_rule === 'yearly') {
     const d = parseYmd(e.event_date);
     if (e.repeat_rule === 'monthly') d.setMonth(d.getMonth() + 1); else d.setFullYear(d.getFullYear() + 1);
@@ -1787,7 +1791,7 @@ api.get('/subscription/payment-orders/:order_no', (req, res) => {
 api.post('/subscription/payment-orders/:order_no/claim', (req, res) => {   // 我已付款 → 待管理员确认
   const o = db.prepare('SELECT * FROM PaymentOrder WHERE order_no=?').get(req.params.order_no);
   if (!o || o.family_id !== req.familyId) return res.status(404).json({ error: 'not found' });
-  if (o.status === 'PENDING') db.prepare("UPDATE PaymentOrder SET status='SUBMITTED', claimed_at=datetime('now'), updated_at=datetime('now') WHERE payment_order_id=?").run(o.payment_order_id);
+  if (o.status === 'PENDING') db.prepare("UPDATE PaymentOrder SET status='SUBMITTED', claimed_at=datetime('now','localtime'), updated_at=datetime('now','localtime') WHERE payment_order_id=?").run(o.payment_order_id);
   res.json({ order_no: o.order_no, status: db.prepare('SELECT status FROM PaymentOrder WHERE payment_order_id=?').get(o.payment_order_id).status });
 });
 
@@ -1827,7 +1831,7 @@ api.post('/admin/orders/:order_no/confirm', adminGuard, (req, res) => {   // 手
 api.post('/admin/orders/:order_no/reject', adminGuard, (req, res) => {
   const o = db.prepare('SELECT * FROM PaymentOrder WHERE order_no=?').get(req.params.order_no);
   if (!o) return res.status(404).json({ error: 'not found' });
-  db.prepare("UPDATE PaymentOrder SET status='CANCELLED', note=?, updated_at=datetime('now') WHERE order_no=?").run(req.body.reason || '', req.params.order_no);
+  db.prepare("UPDATE PaymentOrder SET status='CANCELLED', note=?, updated_at=datetime('now','localtime') WHERE order_no=?").run(req.body.reason || '', req.params.order_no);
   audit(req, 'PAYMENT_REJECTED', { family_id: o.family_id, order_id: o.payment_order_id, reason: req.body.reason });
   res.json({ ok: true });
 });
@@ -1837,7 +1841,7 @@ api.post('/admin/orders/:order_no/amount', adminGuard, (req, res) => {
   if (!o) return res.status(404).json({ error: 'not found' });
   const amt = +req.body.amount;
   if (!(amt >= 0 && amt < 100000 && isFinite(amt))) return res.status(400).json({ error: 'invalid_amount' });
-  db.prepare("UPDATE PaymentOrder SET amount=?, note=COALESCE(NULLIF(?,''),note), updated_at=datetime('now') WHERE payment_order_id=?").run(amt, req.body.reason || '', o.payment_order_id);
+  db.prepare("UPDATE PaymentOrder SET amount=?, note=COALESCE(NULLIF(?,''),note), updated_at=datetime('now','localtime') WHERE payment_order_id=?").run(amt, req.body.reason || '', o.payment_order_id);
   audit(req, 'ORDER_AMOUNT_ADJUSTED', { family_id: o.family_id, user_id: o.payer_user_id, order_id: o.payment_order_id, old: (+o.amount).toFixed(2), new: amt.toFixed(2), reason: req.body.reason });
   res.json({ ok: true, order_no: o.order_no, amount: amt.toFixed(2) });
 });
@@ -1858,7 +1862,7 @@ api.post('/admin/families/:familyId/extend', adminGuard, (req, res) => {
   const now = Date.now(); const latest = times.length ? Math.max(...times) : 0;
   const base = latest > now ? new Date(latest) : new Date();
   const newEnd = new Date(base.getTime() + days * 86400000);
-  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, status='ACTIVE', access_status='ACTIVE', updated_at=datetime('now') WHERE family_id=?").run(newEnd.toISOString(), fid);
+  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, status='ACTIVE', access_status='ACTIVE', updated_at=datetime('now','localtime') WHERE family_id=?").run(newEnd.toISOString(), fid);
   db.prepare(`INSERT INTO SubscriptionHistory (family_id, old_status, new_status, old_expire_at, new_expire_at, plan_id, reason) VALUES (?,?,?,?,?,?,?)`)
     .run(fid, s.status, 'ACTIVE', latest ? new Date(latest).toISOString() : null, newEnd.toISOString(), s.plan_id, req.body.reason);
   audit(req, 'SUBSCRIPTION_EXTENDED', { family_id: fid, old: latest ? new Date(latest).toISOString() : null, new: newEnd.toISOString(), reason: req.body.reason });
@@ -1867,13 +1871,13 @@ api.post('/admin/families/:familyId/extend', adminGuard, (req, res) => {
 });
 api.post('/admin/families/:familyId/lock', adminGuard, (req, res) => {
   const fid = +req.params.familyId; ensureSubscription(fid); const nowIso = new Date().toISOString();
-  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, trial_end_at=?, status='LOCKED', access_status='LOCKED', updated_at=datetime('now') WHERE family_id=?").run(nowIso, nowIso, fid);
+  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, trial_end_at=?, status='LOCKED', access_status='LOCKED', updated_at=datetime('now','localtime') WHERE family_id=?").run(nowIso, nowIso, fid);
   audit(req, 'SUBSCRIPTION_LOCKED', { family_id: fid, reason: req.body.reason });
   res.json({ ok: true });
 });
 api.post('/admin/families/:familyId/unlock', adminGuard, (req, res) => {
   const fid = +req.params.familyId; ensureSubscription(fid); const newEnd = addMonths(new Date(), 1);
-  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, status='ACTIVE', access_status='ACTIVE', updated_at=datetime('now') WHERE family_id=?").run(newEnd.toISOString(), fid);
+  db.prepare("UPDATE FamilySubscription SET current_period_end_at=?, status='ACTIVE', access_status='ACTIVE', updated_at=datetime('now','localtime') WHERE family_id=?").run(newEnd.toISOString(), fid);
   audit(req, 'SUBSCRIPTION_UNLOCKED', { family_id: fid, new: newEnd.toISOString(), reason: req.body.reason });
   res.json({ ok: true, subscription: subView(fid) });
 });
@@ -1922,7 +1926,7 @@ api.post('/admin/users/:id/delete', adminGuard, (req, res) => {
   const fams = db.prepare("SELECT family_id FROM FamilyMember WHERE user_id=? AND status='active'").all(u.user_id).map((r) => r.family_id);
   db.transaction(() => {
     db.prepare("UPDATE FamilyMember SET status='removed' WHERE user_id=? AND status='active'").run(u.user_id);
-    db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now') WHERE user_id=?").run(u.user_id);
+    db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now','localtime') WHERE user_id=?").run(u.user_id);
   })();
   audit(req, 'USER_DELETED', { user_id: u.user_id, family_id: fams[0] ?? null, old: u.account_status || 'active', new: 'removed', reason: req.body?.reason });
   res.json({ ok: true, user_id: u.user_id, account_status: 'removed' });
@@ -1976,9 +1980,9 @@ if (fs.existsSync(dist)) {
 // 3 个月未登录的账号自动清空账号信息（释放 Gmail、移出家庭、标记删除），用户可重新注册；业务数据保留
 function cleanupInactiveAccounts() {
   try {
-    const rows = db.prepare("SELECT user_id FROM User WHERE COALESCE(account_status,'active')<>'removed' AND last_login_at IS NOT NULL AND last_login_at < datetime('now','-3 months')").all();
+    const rows = db.prepare("SELECT user_id FROM User WHERE COALESCE(account_status,'active')<>'removed' AND last_login_at IS NOT NULL AND last_login_at < datetime('now','localtime','-3 months')").all();
     for (const r of rows) {
-      db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now') WHERE user_id=?").run(r.user_id);
+      db.prepare("UPDATE User SET account_status='removed', email=NULL, updated_at=datetime('now','localtime') WHERE user_id=?").run(r.user_id);
       db.prepare("UPDATE FamilyMember SET status='removed' WHERE user_id=? AND status='active'").run(r.user_id);
     }
     if (rows.length) console.log(`🧹 已清理 ${rows.length} 个超过 3 个月未登录的账号`);
