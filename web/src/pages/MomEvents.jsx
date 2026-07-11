@@ -50,7 +50,7 @@ export default function MomEvents() {
 
   return (
     <>
-      <TopBar title="🇸🇬 MOM 重要事项" sub={helper ? `${helper.avatar} ${helper.name}` : ''} onBack={() => nav('/members')} />
+      <TopBar title="🇸🇬 MOM 重要事项" sub={helper ? `${helper.avatar} ${helper.name}` : ''} onBack={() => nav(-1)} />
       <div className="content">
         {/* 选择女佣 */}
         <div className="card" style={{ padding: '12px 14px', marginBottom: 12 }}>

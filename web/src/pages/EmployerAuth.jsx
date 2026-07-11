@@ -30,7 +30,8 @@ export default function EmployerAuth() {
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const gbtn = useRef(null);
-  const [googleReady, setGoogleReady] = useState(false);   // Google 登录是否可用
+  const [googleReady, setGoogleReady] = useState(false);       // Google 按钮是否已渲染
+  const [googleConfigured, setGoogleConfigured] = useState(false);  // 服务器是否配了 client_id（用于区分"没配"和"浏览器加载不了"）
   const [showPwd, setShowPwd] = useState(false);            // 是否展开旧版账号密码登录
 
   const finish = (r) => {
@@ -46,7 +47,9 @@ export default function EmployerAuth() {
     let cancelled = false;
     api.runtimeConfig().then(async (cfg) => {
       if (cancelled || !cfg?.google_client_id) return;
-      await loadGsi();
+      if (!cancelled) setGoogleConfigured(true);
+      // 微信/App 内置浏览器会拦截 Google 脚本；加载失败时 googleReady 保持 false，下方给出"用系统浏览器打开"的提示
+      try { await loadGsi(); } catch {}
       if (cancelled || !window.google?.accounts?.id) return;
       window.google.accounts.id.initialize({
         client_id: cfg.google_client_id,
@@ -99,7 +102,9 @@ export default function EmployerAuth() {
           <div className="bold" style={{ fontSize: 16, marginBottom: 4 }}>{tt('用 Gmail 登录或注册', 'Sign in with Gmail')}</div>
           <div className="tiny muted" style={{ marginBottom: 14, lineHeight: 1.5 }}>{tt('雇主账号以 Gmail 为准，一个 Gmail 一个账号；首次登录自动创建家庭。', 'Employer accounts are keyed by Gmail — one account per Gmail. First sign-in creates your family.')}</div>
           <div ref={gbtn} style={{ display: 'flex', justifyContent: 'center' }} />
-          {!googleReady && <div className="tiny muted" style={{ marginTop: 10 }}>{tt('（本环境未启用 Google 登录，请用下方账号密码）', '(Google sign-in not enabled here — use username & password below)')}</div>}
+          {!googleReady && (googleConfigured
+            ? <div className="tiny" style={{ marginTop: 10, color: 'var(--amber, #b45309)', lineHeight: 1.5 }}>{tt('当前浏览器无法加载 Google 登录（微信/App 内置浏览器会拦截）。请点右上角「⋯」用 Safari / Chrome 打开本页，或用下方账号密码。', 'This browser can’t load Google sign-in (in-app browsers block it). Open this page in Safari/Chrome, or use username & password below.')}</div>
+            : <div className="tiny muted" style={{ marginTop: 10 }}>{tt('（本环境未启用 Google 登录，请用下方账号密码）', '(Google sign-in not enabled here — use username & password below)')}</div>)}
         </div>
 
         {/* 旧版：用户名 + 密码（默认折叠；Google 未启用时自动展开） */}
