@@ -92,6 +92,15 @@ export const api = {
   join: (body) => req('/join', { method: 'POST', body }),
   googleJoin: (body) => req('/auth/google/join', { method: 'POST', body }),
   maidGoogleLogin: (credential) => req('/auth/google/maid-login', { method: 'POST', body: { credential } }),
+  // MOM 重要事项
+  momEvents: (helperId) => req('/mom-events' + (helperId ? '?helper_id=' + helperId : '')),
+  momToday: () => req('/mom-events/today'),
+  momCreate: (body) => req('/mom-events', { method: 'POST', body }),
+  momUpdate: (id, body) => req('/mom-events/' + id, { method: 'PATCH', body }),
+  momDelete: (id) => req('/mom-events/' + id, { method: 'DELETE' }),
+  momAck: (id) => req('/mom-events/' + id + '/ack', { method: 'POST' }),
+  momHelperDone: (id) => req('/mom-events/' + id + '/helper-done', { method: 'POST' }),
+  momConfirm: (id) => req('/mom-events/' + id + '/confirm', { method: 'POST' }),
   dashEmployer: () => req('/dashboard/employer'),
   dashMaid: (helperId) => req('/dashboard/maid' + (helperId ? '?helper_id=' + helperId : '')),
   // 任务清单模块（修改版）：每日实例

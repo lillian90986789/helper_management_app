@@ -103,6 +103,14 @@
 - **需求**：雇主删女佣的 ✕ 按钮点了立即删除，易误操作，需二次确认。
 - **改法**：`Members.jsx` 的 ✕ 改为打开底部确认弹层（显示成员名 + 后果说明「移出家庭/释放 Gmail/不可撤销」），点「确认删除」才真正调 `removeMember`；取消或点遮罩关闭。删除中禁用按钮防重复。
 
+### 2026-07-11 MOM 重要事项模块（新功能）
+- **需求**：雇主为女佣创建 MOM 相关事项（体检/WP/护照/保险到期、缴Levy、住址、MOM预约、自定义），女佣今日首页展示+确认，雇主最终确认；含提醒。
+- **数据**：新表 `MomEvent`（helper_user_id/title/category/event_date/remind_offset(0/1/3/7)/notify_helper/note/repeat_rule(none/monthly/yearly)/status(pending/helper_done/done)/helper_ack/completed_at/last_reminded_date）。
+- **后端**（server/index.js MOM 段）：`GET /mom-events`（雇主全家庭/女佣自己）、`/mom-events/today`（今日展示规则）、`POST/PATCH/DELETE`（仅雇主）、`/:id/ack`（女佣我知道了）、`/:id/helper-done`（女佣标记完成→通知雇主）、`/:id/confirm`（雇主确认→done，重复则生成下一次，通知女佣）。展示状态由日期算：overdue/due_today/upcoming(提醒窗内)/done(完成当天显示、次日移除)。`/dashboard/maid` 返回 `mom`。每日提醒 `momDailyReminders()`（启动+每6h，提醒日/当天给女佣+雇主发定向通知，按 last_reminded_date 去重）。
+- **前端**：雇主页 `MomEvents.jsx`（路由 `/mom-events`，女佣管理页入口「🇸🇬 MOM 重要事项」）——选女佣+列表+增删改+标记/确认完成+删除确认；女佣 `MaidToday` 顶部 MOM 模块（我知道了/已完成，提交后待雇主确认）。
+- **权限**：创建/编辑/删除/确认仅雇主；女佣只能 ack/helper-done 自己的。
+- 测试 `test_mom_events.mjs`（18/18）：创建/展示规则/权限/ack/helper-done/confirm/通知/重复生成全覆盖。回归 7/7、7/7、5/5、14/14。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

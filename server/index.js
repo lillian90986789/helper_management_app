@@ -1150,7 +1150,9 @@ api.get('/dashboard/maid', async (req, res) => {
   // 本地化：任务标题 + 菜单菜名 翻译成女佣语言
   await localizeTasks(req, tasks);
   { const mf = await trMany(meals.map((m) => m.recipe_name), reqLang(req)); meals.forEach((m) => { if (hasCJK(m.recipe_name)) m.recipe_name_en = mf(m.recipe_name); }); }
-  res.json({ tasks, progress:{ done, total: tasks.length }, next, meals,
+  // MOM 重要事项（当前登录女佣自己的、按今日展示规则）
+  const mom = momTodayFor(famId(req), req.userId, date);
+  res.json({ tasks, progress:{ done, total: tasks.length }, next, meals, mom,
     rest:{ today_is_rest: todayRest, month: now.getMonth() + 1, year: now.getFullYear(),
       rest_days: monthRest, rest_count: monthRest.length, next_rest_day: nextRest ? restDayView(nextRest) : null },
     shopping: shopping ? { ...shopping, to_buy: items.filter(i=>i.status==='to_buy').length, budget: shopping.budget } : null });
@@ -1643,6 +1645,121 @@ api.post('/notifications/:id/read', (req,res)=>{
   db.prepare('UPDATE Notification SET is_read=1 WHERE notification_id=?').run(n.notification_id); res.json({ok:true});
 });
 
+// ===================== MOM 重要事项 =====================
+// 雇主为女佣创建/管理（体检、WP/护照/保险到期、Levy、住址、MOM 预约等）；女佣只能查看/确认/提交完成。
+const REMIND_OFFSETS = [0, 1, 3, 7];
+const curUserRole = (req) => { const u = db.prepare('SELECT role FROM User WHERE user_id=?').get(req.userId); return u ? u.role : null; };
+const addDays = (dateStr, n) => { const d = parseYmd(dateStr); d.setDate(d.getDate() + n); return ymd(d); };
+// 展示状态：done(已完成) / overdue(已逾期) / due_today(当天待完成) / upcoming(即将到期)
+function momDisplay(e, today) {
+  if (e.status === 'done') return 'done';
+  if (e.event_date < today) return 'overdue';
+  if (e.event_date === today) return 'due_today';
+  return 'upcoming';
+}
+function momView(e) {
+  const today = todayYmd();
+  const h = e.helper_user_id ? db.prepare('SELECT user_id,name,avatar FROM User WHERE user_id=?').get(e.helper_user_id) : null;
+  return { ...e, helper: h, display_status: momDisplay(e, today), remind_date: addDays(e.event_date, -(e.remind_offset || 0)) };
+}
+// 是否应在"今日"首页展示：当天 / 提醒窗内即将到期 / 逾期未完成 / 当天完成的（次日移除）
+function momShowToday(e, today) {
+  if (e.status === 'done') return !!e.completed_at && e.completed_at.slice(0, 10) === today;
+  if (e.event_date <= today) return true;
+  return today >= addDays(e.event_date, -(e.remind_offset || 0));
+}
+const momTodayFor = (familyId, helperUserId, today) =>
+  db.prepare('SELECT * FROM MomEvent WHERE family_id=? AND helper_user_id=? ORDER BY event_date').all(familyId, helperUserId)
+    .filter((e) => momShowToday(e, today)).map(momView)
+    .sort((a, b) => (({ overdue: 0, due_today: 1, upcoming: 2, done: 3 })[a.display_status] - ({ overdue: 0, due_today: 1, upcoming: 2, done: 3 })[b.display_status]) || a.event_date.localeCompare(b.event_date));
+
+// 列表：雇主看本家庭全部（可按 helper 过滤）；女佣看自己的
+api.get('/mom-events', (req, res) => {
+  const role = curUserRole(req);
+  let rows;
+  if (role === 'maid') rows = db.prepare('SELECT * FROM MomEvent WHERE family_id=? AND helper_user_id=? ORDER BY event_date').all(famId(req), req.userId);
+  else if (req.query.helper_id) rows = db.prepare('SELECT * FROM MomEvent WHERE family_id=? AND helper_user_id=? ORDER BY event_date').all(famId(req), +req.query.helper_id);
+  else rows = db.prepare('SELECT * FROM MomEvent WHERE family_id=? ORDER BY event_date').all(famId(req));
+  res.json(rows.map(momView));
+});
+// 今日模块：女佣看自己的、雇主看全家庭
+api.get('/mom-events/today', (req, res) => {
+  const today = todayYmd();
+  const rows = curUserRole(req) === 'maid'
+    ? momTodayFor(famId(req), req.userId, today)
+    : db.prepare('SELECT * FROM MomEvent WHERE family_id=? ORDER BY event_date').all(famId(req)).filter((e) => momShowToday(e, today)).map(momView);
+  res.json(rows);
+});
+// 雇主创建
+api.post('/mom-events', (req, res) => {
+  if (curUserRole(req) !== 'employer') return res.status(403).json({ error: 'only_employer' });
+  const b = req.body;
+  const helperId = resolveHelperId(req, b.helper_id);
+  if (!helperId) return res.status(400).json({ error: 'no_helper' });
+  if (!b.title || !String(b.title).trim()) return res.status(400).json({ error: 'title_required' });
+  if (!b.event_date) return res.status(400).json({ error: 'date_required' });
+  const remind = REMIND_OFFSETS.includes(+b.remind_offset) ? +b.remind_offset : 0;
+  const repeat = ['none', 'monthly', 'yearly'].includes(b.repeat_rule) ? b.repeat_rule : 'none';
+  const id = db.prepare(`INSERT INTO MomEvent (family_id,helper_user_id,title,category,event_date,remind_offset,notify_helper,note,repeat_rule,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(famId(req), helperId, String(b.title).trim(), b.category || null, b.event_date, remind, b.notify_helper === false ? 0 : 1, b.note || '', repeat, req.userId).lastInsertRowid;
+  res.json(momView(db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(id)));
+});
+// 雇主编辑
+api.patch('/mom-events/:id', (req, res) => {
+  if (curUserRole(req) !== 'employer') return res.status(403).json({ error: 'only_employer' });
+  const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
+  if (!owns(req, e)) return res.status(404).json({ error: 'not found' });
+  const b = req.body;
+  const remind = b.remind_offset !== undefined && REMIND_OFFSETS.includes(+b.remind_offset) ? +b.remind_offset : e.remind_offset;
+  const repeat = b.repeat_rule !== undefined && ['none', 'monthly', 'yearly'].includes(b.repeat_rule) ? b.repeat_rule : e.repeat_rule;
+  const helperId = b.helper_id !== undefined ? resolveHelperId(req, b.helper_id) : e.helper_user_id;
+  db.prepare(`UPDATE MomEvent SET title=@title, category=@category, event_date=@event_date, remind_offset=@remind,
+      notify_helper=@notify, note=@note, repeat_rule=@repeat, helper_user_id=@helper, updated_at=datetime('now') WHERE mom_event_id=@id`)
+    .run({ title: b.title !== undefined ? String(b.title).trim() : e.title, category: b.category !== undefined ? b.category : e.category,
+      event_date: b.event_date || e.event_date, remind, notify: b.notify_helper !== undefined ? (b.notify_helper ? 1 : 0) : e.notify_helper,
+      note: b.note !== undefined ? b.note : e.note, repeat, helper: helperId, id: e.mom_event_id });
+  res.json(momView(db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(e.mom_event_id)));
+});
+// 雇主删除
+api.delete('/mom-events/:id', (req, res) => {
+  if (curUserRole(req) !== 'employer') return res.status(403).json({ error: 'only_employer' });
+  const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
+  if (!owns(req, e)) return res.status(404).json({ error: 'not found' });
+  db.prepare('DELETE FROM MomEvent WHERE mom_event_id=?').run(e.mom_event_id);
+  res.json({ ok: true });
+});
+// 女佣"我知道了"
+api.post('/mom-events/:id/ack', (req, res) => {
+  const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
+  if (!owns(req, e) || e.helper_user_id !== req.userId) return res.status(404).json({ error: 'not found' });
+  db.prepare("UPDATE MomEvent SET helper_ack=1, updated_at=datetime('now') WHERE mom_event_id=?").run(e.mom_event_id);
+  res.json(momView(db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(e.mom_event_id)));
+});
+// 女佣标记完成 → 待雇主确认，通知雇主
+api.post('/mom-events/:id/helper-done', (req, res) => {
+  const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
+  if (!owns(req, e) || e.helper_user_id !== req.userId) return res.status(404).json({ error: 'not found' });
+  db.prepare("UPDATE MomEvent SET status='helper_done', helper_ack=1, helper_done_at=datetime('now'), updated_at=datetime('now') WHERE mom_event_id=?").run(e.mom_event_id);
+  const maid = db.prepare('SELECT name FROM User WHERE user_id=?').get(req.userId);
+  notify(e.family_id, 'mom', 'MOM 事项待确认', `${maid?.name || '女佣'} 已标记完成「${e.title}」，请确认`, 'mom', e.mom_event_id, 'employer');
+  res.json(momView(db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(e.mom_event_id)));
+});
+// 雇主确认完成 → done；重复事项自动生成下一次；通知女佣
+api.post('/mom-events/:id/confirm', (req, res) => {
+  if (curUserRole(req) !== 'employer') return res.status(403).json({ error: 'only_employer' });
+  const e = db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(req.params.id);
+  if (!owns(req, e)) return res.status(404).json({ error: 'not found' });
+  db.prepare("UPDATE MomEvent SET status='done', completed_at=datetime('now'), updated_at=datetime('now') WHERE mom_event_id=?").run(e.mom_event_id);
+  if (e.repeat_rule === 'monthly' || e.repeat_rule === 'yearly') {
+    const d = parseYmd(e.event_date);
+    if (e.repeat_rule === 'monthly') d.setMonth(d.getMonth() + 1); else d.setFullYear(d.getFullYear() + 1);
+    db.prepare(`INSERT INTO MomEvent (family_id,helper_user_id,title,category,event_date,remind_offset,notify_helper,note,repeat_rule,created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(e.family_id, e.helper_user_id, e.title, e.category, ymd(d), e.remind_offset, e.notify_helper, e.note, e.repeat_rule, e.created_by);
+  }
+  notify(e.family_id, 'mom', 'MOM 事项已完成', `「${e.title}」已确认完成`, 'mom', e.mom_event_id, 'maid', e.helper_user_id);
+  res.json(momView(db.prepare('SELECT * FROM MomEvent WHERE mom_event_id=?').get(e.mom_event_id)));
+});
+
 // ===================== 订阅：用户侧接口 =====================
 api.get('/subscription/plans', (req, res) => res.json({
   promo_text: getConfig('promo_text') || '',
@@ -1869,6 +1986,25 @@ function cleanupInactiveAccounts() {
 }
 cleanupInactiveAccounts();                                   // 启动跑一次
 setInterval(cleanupInactiveAccounts, 24 * 60 * 60 * 1000);   // 每天跑一次
+
+// MOM 重要事项每日提醒：提醒日（事件日-提前天数）或事件当天，给女佣+雇主发通知（每事项每天最多一次）
+function momDailyReminders() {
+  try {
+    const today = todayYmd();
+    const evs = db.prepare("SELECT * FROM MomEvent WHERE status IN ('pending','helper_done')").all();
+    for (const e of evs) {
+      if (e.last_reminded_date === today) continue;
+      const remindDay = today === addDays(e.event_date, -(e.remind_offset || 0));
+      const eventDay = today === e.event_date;
+      if (!remindDay && !eventDay) continue;
+      if (e.notify_helper) notify(e.family_id, 'mom', 'MOM 重要提醒', `你${eventDay ? '今天' : '即将'}有一项「${e.title}」事项，请查看详情`, 'mom', e.mom_event_id, 'maid', e.helper_user_id);
+      if (eventDay) notify(e.family_id, 'mom', 'MOM 重要事项', `女佣今天有一项 MOM 重要事项待完成：${e.title}`, 'mom', e.mom_event_id, 'employer');
+      db.prepare('UPDATE MomEvent SET last_reminded_date=? WHERE mom_event_id=?').run(today, e.mom_event_id);
+    }
+  } catch (err) { console.error('MOM 提醒任务出错', err); }
+}
+momDailyReminders();
+setInterval(momDailyReminders, 6 * 60 * 60 * 1000);          // 每 6 小时检查一次（跨天即触发当天提醒）
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`🏠 HomeFlow 运行于 http://localhost:${PORT}`));

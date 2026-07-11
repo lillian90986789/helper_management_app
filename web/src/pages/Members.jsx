@@ -93,6 +93,7 @@ export default function Members() {
         </div>
 
         <button className="btn outline block mt12" onClick={() => nav('/rest-days')}>🌙 {t('restDaySettings')}</button>
+        <button className="btn outline block mt12" onClick={() => nav('/mom-events')}>🇸🇬 {lang === 'en' ? 'MOM Important Events' : 'MOM 重要事项'}</button>
         <button className="btn primary block mt12" onClick={() => setAdding(true)}>＋ {t('addMaid')}</button>
       </div>
 

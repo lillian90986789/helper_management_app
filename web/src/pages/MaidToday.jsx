@@ -11,7 +11,7 @@ export default function MaidToday() {
   const { showToast } = useApp();
   const { data, reload } = useAsync(() => api.dashMaid(currentMaidId()));
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
-  const { tasks, progress, next, meals, shopping, rest } = data;
+  const { tasks, progress, next, meals, shopping, rest, mom } = data;
   const dateLocale = { zh: 'zh-CN', en: 'en-US', id: 'id-ID', my: 'my-MM' }[lang] || 'en-US';
   const dateStr = new Date().toLocaleDateString(dateLocale, { month: 'long', day: 'numeric', weekday: 'long' });
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
@@ -24,6 +24,10 @@ export default function MaidToday() {
     await api.taskTransition(next.task_id, { to: 'in_progress', action: '开始任务' });
     showToast(t('start') + ' ✓'); reload();
   };
+  const momAck = async (e) => { try { await api.momAck(e.mom_event_id); reload(); } catch { showToast(en ? 'Failed' : '操作失败'); } };
+  const momDone = async (e) => { try { await api.momHelperDone(e.mom_event_id); showToast((en ? 'Marked done' : '已标记完成') + ' ✓'); reload(); } catch { showToast(en ? 'Failed' : '操作失败'); } };
+  const MOM_STATUS = { overdue: [en ? 'Overdue' : '已逾期', 'red'], due_today: [en ? 'To do' : '待完成', 'amber'], upcoming: [en ? 'Upcoming' : '即将到期', 'blue'], done: [en ? 'Done' : '已完成', 'green'] };
+  const momBadge = (e) => e.status === 'helper_done' && e.display_status !== 'done' ? [en ? 'Awaiting confirm' : '待雇主确认', 'purple'] : (MOM_STATUS[e.display_status] || MOM_STATUS.upcoming);
 
   return (
     <>
@@ -45,6 +49,33 @@ export default function MaidToday() {
       </div>
 
       <div className="content">
+        {/* MOM 重要事项（顶部；无事项时不显示） */}
+        {mom && mom.length > 0 && (
+          <>
+            <div className="section-title">🇸🇬 {en ? 'MOM Important Events' : 'MOM 重要事项'}</div>
+            {mom.map((e) => {
+              const [label, color] = momBadge(e);
+              const doneMarked = e.status === 'helper_done' || e.status === 'done';
+              return (
+                <div key={e.mom_event_id} className="card" style={{ borderLeft: '4px solid ' + (color === 'red' ? 'var(--red)' : color === 'amber' ? 'var(--amber)' : color === 'green' ? 'var(--teal)' : '#7c5cff') }}>
+                  <div className="spread">
+                    <span className="bold">{e.event_date.slice(5).replace('-', '月') + '日'}｜{e.title}</span>
+                    <span className={'badge ' + color}>{label}</span>
+                  </div>
+                  {e.note && <div className="small muted mt4">{e.note}</div>}
+                  {!doneMarked && (
+                    <div className="row mt8" style={{ gap: 8, flexWrap: 'wrap' }}>
+                      {!e.helper_ack && <button className="btn sm outline" onClick={() => momAck(e)}>{en ? 'Got it' : '我知道了'}</button>}
+                      <button className="btn sm primary" onClick={() => momDone(e)}>{en ? 'Mark done' : '已完成'}</button>
+                    </div>
+                  )}
+                  {doneMarked && <div className="tiny muted mt8">✅ {en ? 'Waiting for employer to confirm' : '已提交，待雇主确认'}</div>}
+                </div>
+              );
+            })}
+          </>
+        )}
+
         {/* 今天是休息日提示（第 4.2 节） */}
         {rest?.today_is_rest && (
           <div className="rest-banner">

@@ -16,6 +16,7 @@ import EmployerAuth from './pages/EmployerAuth.jsx';
 import JoinPage from './pages/JoinPage.jsx';
 import MaidBind from './pages/MaidBind.jsx';
 import MaidLogin from './pages/MaidLogin.jsx';
+import MomEvents from './pages/MomEvents.jsx';
 import { api } from './api.js';
 import RecipeList from './pages/RecipeList.jsx';
 import RecipeDetail from './pages/RecipeDetail.jsx';
@@ -175,6 +176,7 @@ export default function App() {
               <Route path="/task-new/:id" element={<TaskNew />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/rest-days" element={<RestDaySettings />} />
+              <Route path="/mom-events" element={<MomEvents />} />
               <Route path="/task/:id" element={<TaskDetail />} />
               <Route path="/recipe/:id" element={<RecipeDetail />} />
               <Route path="/recipe-new" element={<RecipeNew />} />

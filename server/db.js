@@ -511,6 +511,30 @@ CREATE TABLE IF NOT EXISTS AdminNote (
 );
 `);
 
+// MOM 重要事项（雇主为女佣创建：体检/WP/护照/保险/Levy/住址/预约/其他）。女佣只能查看/确认/提交完成。
+db.exec(`
+CREATE TABLE IF NOT EXISTS MomEvent (
+  mom_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  family_id INTEGER,
+  helper_user_id INTEGER,            -- 为哪位女佣
+  title TEXT NOT NULL,               -- 事项名称
+  category TEXT,                     -- 分类（可空）
+  event_date TEXT,                   -- YYYY-MM-DD
+  remind_offset INTEGER DEFAULT 0,   -- 提前天数：0/1/3/7
+  notify_helper INTEGER DEFAULT 1,
+  note TEXT,
+  repeat_rule TEXT DEFAULT 'none',   -- none|monthly|yearly
+  status TEXT DEFAULT 'pending',     -- pending(待完成)|helper_done(女佣已标记待确认)|done(雇主确认完成)
+  helper_ack INTEGER DEFAULT 0,      -- 女佣"我知道了"
+  helper_done_at TEXT,
+  completed_at TEXT,                 -- 雇主确认完成时间
+  last_reminded_date TEXT,           -- 上次生成提醒的日期（去重每日提醒）
+  created_by INTEGER,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
 // 一个 Gmail 只能对应一个账号（空邮箱不限，女佣可无邮箱）。已有重复时忽略建索引，应用层仍会查重。
 try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON User(email) WHERE email IS NOT NULL AND email<>''"); } catch (e) { /* noop */ }
 
