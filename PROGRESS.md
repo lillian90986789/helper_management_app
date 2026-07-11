@@ -129,6 +129,12 @@
 - **Google 按钮不显示（线上）**：查线上 /api/config 其实已配 google_client_id；根因是**微信/App 内置浏览器拦截 Google GSI 脚本**（Google 禁止 webview 内 OAuth）。`EmployerAuth` 加 `googleConfigured` 状态：配了但 GSI 加载失败时提示「请用 Safari/Chrome 打开本页」，而非误导的「本环境未启用」。真正解法是用系统浏览器打开。（女佣端同理）
 - **MOM 返回 bug**：`MomEvents` 返回用 `nav('/members')` 会多压一层历史，导致女佣管理页返回不到「我的」。改为 `nav(-1)`。
 
+### 2026-07-11 消费税统一 0% + 隐藏设置界面
+- 用户要求：隐藏「我的」页的 GST 设置，且所有家庭统一 0%。
+- `Me.jsx` GST 设置卡片用 `{false && ...}` 隐藏（保留代码，去掉 false 即恢复）。
+- `gstRate()` 恒返回 0（忽略存储值，保证任何历史遗留值也一律不计税）；恢复可配置时改回读 Family.gst_rate。
+- （下方 06aeeec 的默认 0% + 一次性重置迁移仍在。）test_gst_zero 5/5。
+
 ### 2026-07-11 消费税(GST)默认改 0%
 - 原默认 9%（Family.gst_rate DEFAULT 0.09 + DEFAULT_GST_RATE 0.09 + 前端兜底 0.09）。全部改 0。
 - 已有家庭因加列时被回填 0.09：db.js 加一次性迁移 `UPDATE Family SET gst_rate=0 WHERE gst_rate=0.09`，用 AppConfig `gst_default_zero_v1` 标记只跑一次（之后雇主主动设 9% 不会被再清零）。雇主仍可在「我的」页调整。test_gst_zero 5/5。

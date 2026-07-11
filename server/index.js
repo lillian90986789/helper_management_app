@@ -1405,11 +1405,10 @@ api.post('/shopping/:id/receipt-scan', async (req, res) => {
 const AMOUNT_TOLERANCE = 0.05;
 // 消费税（GST）：女佣录入的商品单价为税前价，汇总时额外加税与 receipt 税后总额核对
 // 税率为家庭级可配置项（默认新加坡 9%）
-const DEFAULT_GST_RATE = 0;   // 消费税默认 0%（雇主可在「我的」页调整）
-function gstRate(familyId) {
-  const f = familyId ? db.prepare('SELECT gst_rate FROM Family WHERE family_id=?').get(familyId) : null;
-  const r = f && f.gst_rate != null ? f.gst_rate : DEFAULT_GST_RATE;
-  return (r >= 0 && r < 1) ? r : DEFAULT_GST_RATE;
+const DEFAULT_GST_RATE = 0;
+// 消费税统一 0%（设置界面已隐藏）。恢复"按家庭可配置"时，改回读取 Family.gst_rate 即可。
+function gstRate(_familyId) {
+  return 0;
 }
 function matchStatus(helperTotal, receiptTotal) {
   if (receiptTotal == null) return 'unrecognized';

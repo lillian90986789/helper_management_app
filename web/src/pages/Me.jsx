@@ -159,8 +159,8 @@ export default function Me({ role }) {
           </div>
         </div>
 
-        {/* 采购设置：GST 消费税率（雇主可配置） */}
-        {isEmp && gstPct != null && (
+        {/* 采购设置：GST 消费税率（雇主可配置）——暂时隐藏（默认 0%），需要时把 false 去掉即可恢复 */}
+        {false && isEmp && gstPct != null && (
           <>
             <div className="section-title">🧾 {lang === 'en' ? 'Shopping Settings' : '采购设置'}</div>
             <div className="card">
