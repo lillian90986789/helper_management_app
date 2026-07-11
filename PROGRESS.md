@@ -121,6 +121,10 @@
 - **注意**：本次之前已入库的行是 UTC，显示会偏 8h；新数据起正确。前端无改动（浏览器本地 tz + 直接 slice 已存的 SGT 值）。
 - 测试 `test_timezone.mjs`（8/8：TZ/格式/SGT 小时/JS 与 SQL 一致/订阅比较正常）；全量回归 9 套全绿。
 
+### 2026-07-11 MOM 未完成事项在女佣首页一直显示
+- 用户反馈：加了 MOM 事项但女佣首页看不到（原设计只在提醒窗内显示）。用户选择"未完成的一直显示"。
+- 改 `momShowToday`：未完成（pending/helper_done）一律显示（即将到期/当天/逾期），已完成仍只在完成当天显示、次日移除。「提醒时间」从此只控制推送提醒时机，不再影响首页可见性。test_mom_events 相应断言更新，18/18。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）

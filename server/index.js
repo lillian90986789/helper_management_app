@@ -1666,11 +1666,11 @@ function momView(e) {
   const h = e.helper_user_id ? db.prepare('SELECT user_id,name,avatar FROM User WHERE user_id=?').get(e.helper_user_id) : null;
   return { ...e, helper: h, display_status: momDisplay(e, today), remind_date: addDays(e.event_date, -(e.remind_offset || 0)) };
 }
-// 是否应在"今日"首页展示：当天 / 提醒窗内即将到期 / 逾期未完成 / 当天完成的（次日移除）
+// 是否应在"今日"首页展示：未完成的一直显示（即将到期/当天/逾期）；已完成的仅完成当天显示、次日移除。
+// 「提醒时间」只影响推送提醒时机，不再影响首页可见性。
 function momShowToday(e, today) {
   if (e.status === 'done') return !!e.completed_at && e.completed_at.slice(0, 10) === today;
-  if (e.event_date <= today) return true;
-  return today >= addDays(e.event_date, -(e.remind_offset || 0));
+  return true;
 }
 const momTodayFor = (familyId, helperUserId, today) =>
   db.prepare('SELECT * FROM MomEvent WHERE family_id=? AND helper_user_id=? ORDER BY event_date').all(familyId, helperUserId)
