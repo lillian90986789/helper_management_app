@@ -17,6 +17,8 @@ export default function Members() {
   const { data, reload } = useAsync(() => api.members());
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(blankForm);
+  const [confirmRemove, setConfirmRemove] = useState(null);   // 待确认删除的成员（防误操作，二次确认）
+  const [removing, setRemoving] = useState(false);
   const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   if (!data) return <><TopBar title={t('memberMgmt')} /><div className="empty">加载中…</div></>;
@@ -36,11 +38,20 @@ export default function Members() {
     setAdding(false);
     reload();
   };
-  const remove = async (m) => {
-    if (m.role === 'employer') return;
-    await api.removeMember(m.family_member_id);
-    showToast(t('removed') + ' ✓');
-    reload();
+  // 实际删除（在二次确认弹层里点确认后调用）
+  const doRemove = async () => {
+    const m = confirmRemove;
+    if (!m || m.role === 'employer') return;
+    setRemoving(true);
+    try {
+      await api.removeMember(m.family_member_id);
+      showToast(t('removed') + ' ✓');
+      setConfirmRemove(null);
+      reload();
+    } catch (e) {
+      showToast((lang === 'en' ? 'Failed: ' : '删除失败：') + (e.code || ''));
+    }
+    setRemoving(false);
   };
 
   return (
@@ -76,7 +87,7 @@ export default function Members() {
               {m.role === 'maid' &&
                 <button className="iconbtn" onClick={() => nav('/rest-days')} title={t('restDaySettings')}>🌙</button>}
               {m.role !== 'employer' &&
-                <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => remove(m)} title={t('removeMember')}>✕</button>}
+                <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => setConfirmRemove(m)} title={t('removeMember')}>✕</button>}
             </div>
           ))}
         </div>
@@ -131,6 +142,24 @@ export default function Members() {
               </div>
             </div>
             <button className="btn primary block mt12" onClick={submit}>{t('addDirectly')}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 删除成员二次确认（防误操作） */}
+      {confirmRemove && (
+        <div onClick={() => !removing && setConfirmRemove(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 60, display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '22px 22px 0 0', width: '100%', padding: 20, paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
+            <div className="bold" style={{ fontSize: 17 }}>⚠️ {lang === 'en' ? 'Remove this member?' : '确认删除该成员？'}</div>
+            <div className="small muted" style={{ margin: '10px 0 16px' }}>
+              {lang === 'en'
+                ? `“${confirmRemove.name}” will be removed from the family and lose access. Their Gmail is released (can rejoin later). This cannot be undone.`
+                : `将把「${confirmRemove.name}」移出家庭并收回其访问权限，释放其绑定的 Gmail（之后可重新加入）。此操作不可撤销。`}
+            </div>
+            <div className="row" style={{ gap: 10 }}>
+              <button className="btn outline grow" disabled={removing} onClick={() => setConfirmRemove(null)}>{t('cancel')}</button>
+              <button className="btn danger grow" disabled={removing} onClick={doRemove}>{removing ? '…' : (lang === 'en' ? 'Remove' : '确认删除')}</button>
+            </div>
           </div>
         </div>
       )}

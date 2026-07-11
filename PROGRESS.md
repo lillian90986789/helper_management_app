@@ -99,6 +99,10 @@
 - **改法**：`/dashboard/maid`、`/dashboard/employer` 的 meals 查询和 `/meals` 都加 `AND meal_date=today`。（meal_date 在所有 MealOrder INSERT 处都已赋值，过滤安全。）
 - 测试 `test_today_menu_only.mjs`（5/5）：今天的显示、昨天的不显示、做饭页仅 1 条。
 
+### 2026-07-11 雇主删除女佣加二次确认
+- **需求**：雇主删女佣的 ✕ 按钮点了立即删除，易误操作，需二次确认。
+- **改法**：`Members.jsx` 的 ✕ 改为打开底部确认弹层（显示成员名 + 后果说明「移出家庭/释放 Gmail/不可撤销」），点「确认删除」才真正调 `removeMember`；取消或点遮罩关闭。删除中禁用按钮防重复。
+
 ## 待办 / 待确认
 - **需求2 彻底程度**：目前雇主登录页保留"旧账号 用户名密码"作为过渡 + fallback（Google 未配时）。用户说过"全部基于邮箱"——是否要**彻底移除**用户名密码入口？倾向保留 fallback 以免锁死，等用户确认。
 - **线上部署**：需在服务器 `.env` 配 `GOOGLE_CLIENT_ID`（+ Google Cloud OAuth 授权来源加 https://helpermanagement.xyz），否则登录页只显示账号密码。部署后 `docker compose -f docker-compose.prod.yml up -d --build --force-recreate`。验证：`curl https://helpermanagement.xyz/api/config` 看 google_client_id。（注意 prod 用 expose 非 ports，curl localhost:8080 为空是正常的。）
