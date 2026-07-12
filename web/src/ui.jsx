@@ -39,6 +39,19 @@ export function AvatarPicker({ value, onChange, emojis, showToast }) {
   );
 }
 
+// 压缩并上传图片，返回 /uploads/... URL。步骤图等大图必须走这里：
+// 手机原图 2-5MB，base64 过 JSON 再膨胀 33%，先在客户端压到 ~1280px/JPEG0.8（约150-300KB）
+export async function compressAndUploadImage(file, { maxW = 1280, quality = 0.8, kind = 'image' } = {}) {
+  const dataUrl = await new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = err; fr.readAsDataURL(file); });
+  const img = await new Promise((ok, err) => { const i = new Image(); i.onload = () => ok(i); i.onerror = err; i.src = dataUrl; });
+  const scale = Math.min(1, maxW / (img.width || maxW));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  const r = await api.uploadAvatar({ image_base64: canvas.toDataURL('image/jpeg', quality), media_type: 'image/jpeg', kind });
+  return r.url;
+}
+
 // 菜谱封面：是图片 URL 就渲染成图片填满容器，否则显示 emoji 文本
 export function CoverThumb({ value, imgStyle }) {
   if (isImgAvatar(value)) return <img src={value} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit', ...imgStyle }} />;

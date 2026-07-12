@@ -33,7 +33,7 @@ const created = parse(await client.callTool({ name: 'create_recipe', arguments: 
     { name: '熟米饭', name_en: 'Cooked rice', quantity: '1', unit: '碗' },
   ],
   steps: [
-    { instruction: '牛肉末用姜擦拭，加淀粉和油腌10分钟，炒至刚熟盛出', instruction_en: 'Rub beef with ginger, marinate 10 mins, stir-fry until just cooked', duration: 15 },
+    { instruction: '牛肉末用姜擦拭，加淀粉和油腌10分钟，炒至刚熟盛出', instruction_en: 'Rub beef with ginger, marinate 10 mins, stir-fry until just cooked', duration: 15, image_url: '/uploads/recipe_demo.jpg' },
     { instruction: '番茄丁炒软出汁，加入蒸好的茄子拌匀', instruction_en: 'Cook tomato until soft, add steamed eggplant', duration: 10 },
     { instruction: '牛肉回锅，水淀粉勾芡小火5分钟，浇在米饭上', instruction_en: 'Return beef, thicken, simmer 5 mins, serve over rice', duration: 5 },
   ],
@@ -43,6 +43,16 @@ check(`create_recipe 创建成功 id=${created.recipe_id}`, created.recipe_id > 
 // 4. 详情读取
 const detail = parse(await client.callTool({ name: 'get_recipe', arguments: { recipe_id: created.recipe_id } }));
 check('get_recipe 步骤完整', detail.steps.length === 3 && detail.name_en.includes('Beef'));
+check('步骤配图 image_url 落库并返回', detail.steps[0].image_url === '/uploads/recipe_demo.jpg' && !detail.steps[1].image_url);
+
+// 上传接口：1x1 PNG，kind=recipe 前缀
+const png1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const up = await fetch('http://127.0.0.1:8080/api/upload-avatar', { method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+  body: JSON.stringify({ image_base64: png1x1, media_type: 'image/png', kind: 'recipe' }) }).then((r) => r.json());
+check(`上传接口 kind 前缀生效 (${up.url})`, /^\/uploads\/recipe_\d+/.test(up.url || ''));
+const served = await fetch('http://127.0.0.1:8080' + up.url);
+check('上传的图片可通过 /uploads 访问', served.ok);
 
 // 5. 修改
 const updated = parse(await client.callTool({ name: 'update_recipe', arguments: { recipe_id: created.recipe_id, notes: '1岁以上可加少量低钠酱油' } }));

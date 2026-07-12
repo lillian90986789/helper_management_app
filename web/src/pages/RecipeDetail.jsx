@@ -78,6 +78,7 @@ export default function RecipeDetail() {
               <div className="thumb" style={{ width: 30, height: 30, fontSize: 14, fontWeight: 800, color: 'var(--teal-d)' }}>{s.step_number}</div>
               <div className="grow">
                 <div style={{ lineHeight: 1.6 }}>{pick(lang, s.instruction, s.instruction_en)}</div>
+                {s.image_url && <img src={s.image_url} alt="" onClick={() => window.open(s.image_url)} style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 10, marginTop: 6, display: 'block', cursor: 'zoom-in' }} />}
                 <div className="tiny muted mt4">
                   {s.duration ? '⏱ ' + s.duration + t('min') : ''}{s.notes ? ' · ⚠️ ' + s.notes : ''}
                   {lang === 'en' && s.instruction_en && <span className="badge blue tiny" style={{ marginLeft: 6 }}>{t('autoTranslated')}</span>}

@@ -61,7 +61,10 @@ export default function MealOrder() {
           {m.recipe.steps.map((s) => (
             <div key={s.step_id} className="checkrow">
               <span className="thumb" style={{ width: 26, height: 26, fontSize: 13, fontWeight: 800 }}>{s.step_number}</span>
-              <span className="grow small">{pick(lang, s.instruction, s.instruction_en)}</span>
+              <div className="grow small">
+                {pick(lang, s.instruction, s.instruction_en)}
+                {s.image_url && <img src={s.image_url} alt="" onClick={() => window.open(s.image_url)} style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 10, marginTop: 6, display: 'block', cursor: 'zoom-in' }} />}
+              </div>
             </div>
           ))}
         </div>

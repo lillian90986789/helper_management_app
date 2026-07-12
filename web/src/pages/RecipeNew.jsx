@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n } from '../i18n.jsx';
-import { TopBar, AvatarPicker } from '../ui.jsx';
+import { TopBar, AvatarPicker, compressAndUploadImage } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 const EMOJIS = ['🍲','🍅','🐟','🍚','🎃','🥦','🍗','🍜','🥘','🍳','🥗','🍤','🍛','🥟','🍠','🧆'];
@@ -29,9 +29,17 @@ export default function RecipeNew() {
         category: r.category || (en ? 'Home cooking' : '家常菜'), servings: r.servings || 3, duration: r.duration || 30,
         difficulty: r.difficulty || 'normal', suitable_age: r.suitable_age || '', notes: r.notes || '' });
       setIngs(r.ingredients?.length ? r.ingredients.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit })) : [{ name: '', quantity: '', unit: '' }]);
-      setSteps(r.steps?.length ? r.steps.map((s) => ({ instruction: s.instruction })) : [{ instruction: '' }]);
+      setSteps(r.steps?.length ? r.steps.map((s) => ({ instruction: s.instruction, image_url: s.image_url || '' })) : [{ instruction: '' }]);
     }).catch(() => showToast(en ? 'Load failed' : '加载失败'));
   }, [id]);
+
+  // 步骤配图：客户端压缩后上传，写回该步骤的 image_url
+  const onStepImage = async (e, i) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    try { const url = await compressAndUploadImage(file, { kind: 'recipe' }); setSteps((p) => p.map((x, j) => j === i ? { ...x, image_url: url } : x)); }
+    catch { showToast(en ? 'Upload failed' : '上传失败'); }
+    e.target.value = '';
+  };
 
   const save = async () => {
     if (!f.name.trim()) return showToast(en ? 'Enter recipe name' : '请填写菜谱名称');
@@ -40,7 +48,7 @@ export default function RecipeNew() {
       const body = {
         ...f, servings: +f.servings || 1, duration: +f.duration || 0,
         ingredients: ings.filter((i) => i.name.trim()).map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, required: true })),
-        steps: steps.filter((s) => s.instruction.trim()).map((s) => ({ instruction: s.instruction })),
+        steps: steps.filter((s) => s.instruction.trim()).map((s) => ({ instruction: s.instruction, image_url: s.image_url || '' })),
       };
       const r = editing ? await api.updateRecipe(id, body) : await api.createRecipe(body);
       showToast(editing ? (en ? 'Saved ✓' : '已保存 ✓') : (en ? 'Recipe created ✓' : '菜谱已创建 ✓'));
@@ -102,10 +110,20 @@ export default function RecipeNew() {
         <div className="section-title">👩‍🍳 {t('steps')}</div>
         <div className="card">
           {steps.map((s, i) => (
-            <div key={i} className="row" style={{ gap: 6, marginBottom: 8, alignItems: 'flex-start' }}>
-              <span className="thumb" style={{ width: 26, height: 26, fontSize: 13, fontWeight: 800, flex: 'none' }}>{i + 1}</span>
-              <textarea className="input" value={s.instruction} placeholder={en ? 'Step…' : '步骤说明…'} onChange={(e) => setSteps((p) => p.map((x, j) => j === i ? { ...x, instruction: e.target.value } : x))} />
-              <button className="iconbtn" onClick={() => setSteps((p) => p.filter((_, j) => j !== i))}>✕</button>
+            <div key={i} style={{ marginBottom: 10 }}>
+              <div className="row" style={{ gap: 6, alignItems: 'flex-start' }}>
+                <span className="thumb" style={{ width: 26, height: 26, fontSize: 13, fontWeight: 800, flex: 'none' }}>{i + 1}</span>
+                <textarea className="input" value={s.instruction} placeholder={en ? 'Step…' : '步骤说明…'} onChange={(e) => setSteps((p) => p.map((x, j) => j === i ? { ...x, instruction: e.target.value } : x))} />
+                <button className="iconbtn" onClick={() => setSteps((p) => p.filter((_, j) => j !== i))}>✕</button>
+              </div>
+              <div className="row" style={{ gap: 8, marginTop: 4, marginLeft: 32, alignItems: 'center' }}>
+                {s.image_url && <img src={s.image_url} alt="" style={{ height: 56, borderRadius: 8 }} />}
+                <label className="btn sm outline" style={{ cursor: 'pointer', flex: 'none' }}>
+                  📷 {s.image_url ? (en ? 'Replace' : '换图') : (en ? 'Photo' : '加图')}
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onStepImage(e, i)} />
+                </label>
+                {s.image_url && <button className="iconbtn" onClick={() => setSteps((p) => p.map((x, j) => j === i ? { ...x, image_url: '' } : x))}>🗑</button>}
+              </div>
             </div>
           ))}
           <button className="btn sm outline block" onClick={() => setSteps((p) => [...p, { instruction: '' }])}>＋ {t('steps')}</button>

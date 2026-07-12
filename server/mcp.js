@@ -40,6 +40,7 @@ const ingredientShape = z.object({
 const stepShape = z.object({
   instruction: z.string().describe('步骤说明（中文）'),
   instruction_en: z.string().optional().describe('步骤英文说明'),
+  image_url: z.string().optional().describe('步骤配图 URL（/uploads/... 或外链）'),
   duration: z.number().optional().describe('该步骤耗时（分钟）'),
 });
 

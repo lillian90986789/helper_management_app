@@ -515,7 +515,8 @@ api.post('/upload-avatar', (req, res) => {
   if (!base64) return res.status(400).json({ error: 'image_required' });
   const mediaType = b.media_type || 'image/png';
   const ext = (mediaType.split('/')[1] || 'png').replace('jpeg', 'jpg');
-  const fname = `avatar_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
+  const kind = /^[a-z]{1,12}$/.test(b.kind || '') ? b.kind : 'avatar';
+  const fname = `${kind}_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
   try { fs.writeFileSync(join(uploadsDir, fname), Buffer.from(base64, 'base64')); }
   catch (e) { return res.status(500).json({ error: 'save_failed' }); }
   res.json({ url: `/uploads/${fname}` });
@@ -1199,8 +1200,8 @@ api.post('/recipes', (req, res) => {
       difficulty: ['easy','normal','hard'].includes(b.difficulty) ? b.difficulty : 'normal', suitable_age: b.suitable_age || '', allergen_info: b.allergen_info || '', notes: b.notes || '' }).lastInsertRowid;
   (b.ingredients || []).filter((i) => i.name && i.name.trim()).forEach((i) => db.prepare(`INSERT INTO RecipeIngredient (recipe_id,name,name_en,quantity,unit,required,substitute) VALUES (?,?,?,?,?,?,?)`)
     .run(id, i.name.trim(), i.name_en || '', i.quantity || '', i.unit || '', i.required === false ? 0 : 1, i.substitute || ''));
-  (b.steps || []).filter((s) => (s.instruction || '').trim()).forEach((s, idx) => db.prepare(`INSERT INTO RecipeStep (recipe_id,step_number,instruction,instruction_en,duration) VALUES (?,?,?,?,?)`)
-    .run(id, idx + 1, s.instruction.trim(), s.instruction_en || '', s.duration || 0));
+  (b.steps || []).filter((s) => (s.instruction || '').trim()).forEach((s, idx) => db.prepare(`INSERT INTO RecipeStep (recipe_id,step_number,instruction,instruction_en,image_url,duration) VALUES (?,?,?,?,?,?)`)
+    .run(id, idx + 1, s.instruction.trim(), s.instruction_en || '', s.image_url || null, s.duration || 0));
   res.json(recipeWith(db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(id)));
 });
 // 修改已有菜谱（覆盖字段 + 重建食材/步骤）
@@ -1226,8 +1227,8 @@ api.patch('/recipes/:id', (req, res) => {
     }
     if (b.steps) {
       db.prepare('DELETE FROM RecipeStep WHERE recipe_id=?').run(r.recipe_id);
-      b.steps.filter((s) => (s.instruction || '').trim()).forEach((s, idx) => db.prepare(`INSERT INTO RecipeStep (recipe_id,step_number,instruction,instruction_en,duration) VALUES (?,?,?,?,?)`)
-        .run(r.recipe_id, idx + 1, s.instruction.trim(), s.instruction_en || '', s.duration || 0));
+      b.steps.filter((s) => (s.instruction || '').trim()).forEach((s, idx) => db.prepare(`INSERT INTO RecipeStep (recipe_id,step_number,instruction,instruction_en,image_url,duration) VALUES (?,?,?,?,?,?)`)
+        .run(r.recipe_id, idx + 1, s.instruction.trim(), s.instruction_en || '', s.image_url || null, s.duration || 0));
     }
   });
   try { tx(); } catch (e) { return res.status(500).json({ error: 'update_failed', detail: String(e.message || e) }); }
