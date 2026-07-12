@@ -1967,6 +1967,10 @@ api.post('/admin/config', adminGuard, (req, res) => {
 
 app.use('/api', api);
 
+// ---- MCP server（LLM 客户端接入，见 server/mcp.js）----
+import { mountMcp } from './mcp.js';
+mountMcp(app);
+
 // ---- 小票图片静态访问 ----
 app.use('/uploads', express.static(uploadsDir));
 
