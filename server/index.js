@@ -1281,6 +1281,24 @@ function mealWith(m) {
   return m;
 }
 api.get('/meals', async (req, res) => { const ms = db.prepare('SELECT * FROM MealOrder WHERE family_id=? AND meal_date=? ORDER BY start_time').all(famId(req), todayYmd()).map(mealWith); await localizeRecipes(req, ms.map(m=>m.recipe)); res.json(ms); });
+// 本周菜单：周一~周日全部菜品，按日期分组（提前排菜 + 周菜单展示）
+api.get('/meals/week', async (req, res) => {
+  const mon = mondayOf(new Date());
+  const today = todayYmd();
+  const days = [];
+  const allRecipes = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mon); d.setDate(mon.getDate() + i);
+    const ds = ymd(d);
+    const ms = db.prepare(`SELECT * FROM MealOrder WHERE family_id=? AND meal_date=?
+      ORDER BY CASE meal_type WHEN 'breakfast' THEN 1 WHEN 'lunch' THEN 2 WHEN 'dinner' THEN 3 ELSE 4 END`)
+      .all(famId(req), ds).map(mealWith);
+    ms.forEach((m) => allRecipes.push(m.recipe));
+    days.push({ date: ds, weekday: i + 1, isToday: ds === today, meals: ms });
+  }
+  await localizeRecipes(req, allRecipes);
+  res.json({ start: ymd(mon), end: days[6].date, days });
+});
 api.get('/meals/:id', async (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
   if (!owns(req, m)) return res.status(404).json({ error:'not found' });
