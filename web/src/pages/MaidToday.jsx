@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, currentMaidId } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { StatusBadge, PriorityBadge, fmtTime, CoverThumb } from '../ui.jsx';
+import { StatusBadge, PriorityBadge, fmtTime, WeeklyMenu } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function MaidToday() {
@@ -10,6 +10,7 @@ export default function MaidToday() {
   const nav = useNavigate();
   const { showToast } = useApp();
   const { data, reload } = useAsync(() => api.dashMaid(currentMaidId()));
+  const { data: week } = useAsync(() => api.mealsWeek());
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
   const { tasks, progress, next, meals, shopping, rest, mom } = data;
   const dateLocale = { zh: 'zh-CN', en: 'en-US', id: 'id-ID', my: 'my-MM' }[lang] || 'en-US';
@@ -145,19 +146,10 @@ export default function MaidToday() {
           ))}
         </div>
 
-        {/* 今日做饭 */}
+        {/* 本周做饭 */}
         <div className="section-title">🍳 {t('todayCook')}</div>
         <div className="card">
-          {meals.map((m) => (
-            <div key={m.meal_order_id} className="list-item" onClick={() => nav('/meal/' + m.meal_order_id)}>
-              <div className="thumb"><CoverThumb value={m.cover_image} /></div>
-              <div className="grow">
-                <div className="bold">{pick(lang, m.recipe_name, m.recipe_name_en)} {m.recipe_type === 'baby' && <span className="badge purple tiny">{t('baby')}</span>}</div>
-                <div className="tiny muted">{t(m.meal_type)} · {fmtTime(m.start_time)}</div>
-              </div>
-              <StatusBadge status={m.status} />
-            </div>
-          ))}
+          {week ? <WeeklyMenu days={week.days} lang={lang} t={t} onOpen={(id) => nav('/meal/' + id)} /> : <div className="empty tiny">加载中…</div>}
         </div>
 
         {/* 下一个休息日提示（非休息日时，第 4.2 节） */}
