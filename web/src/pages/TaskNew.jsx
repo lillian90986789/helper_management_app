@@ -3,17 +3,19 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, WeekdayPicker, Avatar } from '../ui.jsx';
+import { TopBar, WeekdayPicker, Avatar, compressAndUploadImage } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function TaskNew() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
-  const { id } = useParams();         // 有 id = 编辑模板
+  const { id } = useParams();         // 有 id = 编辑模板（模板编辑始终走"重复任务"表单，不显示切换）
   const editing = !!id;
   const { showToast } = useApp();
   const { data: boot } = useAsync(() => api.bootstrap());
   const { data: existing } = useAsync(() => (editing ? api.template(id) : Promise.resolve(null)), [id]);
+
+  const [mode, setMode] = useState('repeat');   // 'repeat' | 'adhoc'（仅新建时可切换）
 
   const [f, setF] = useState({
     task_name: '', task_name_en: '', description: '', area_id: null, assignee_id: 2, priority: 'normal',
@@ -70,10 +72,20 @@ export default function TaskNew() {
     }
   }, [boot]);
 
+  if (mode === 'adhoc' && !editing) {
+    return <AdhocTaskForm t={t} lang={lang} nav={nav} showToast={showToast} areas={areas} assignees={assignees} onSwitchMode={() => setMode('repeat')} />;
+  }
+
   return (
     <>
       <TopBar title={editing ? t('edit') : t('newTask')} />
       <div className="content">
+        {!editing && (
+          <div className="seg" style={{ marginBottom: 4 }}>
+            <button className="opt on" onClick={() => setMode('repeat')}>{t('repeatTaskTab')}</button>
+            <button className="opt" onClick={() => setMode('adhoc')}>{t('adhocTaskTab')}</button>
+          </div>
+        )}
         <div className="field">
           <label>{t('taskName')} <span className="req">*</span></label>
           <input className="input" value={f.task_name} maxLength={50} placeholder={lang === 'en' ? 'e.g. Clean kitchen' : '例如：打扫厨房'} onChange={(e) => set('task_name', e.target.value)} />
@@ -174,5 +186,119 @@ function Toggle({ label, on, onClick }) {
       <span className="bold small">{label}</span>
       <div className={'switch' + (on ? ' on' : '')} onClick={onClick}><i /></div>
     </div>
+  );
+}
+
+// ===== 临时任务（一次性，图片描述） =====
+function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode }) {
+  const en = lang === 'en';
+  const [f, setF] = useState({
+    task_name: '', description: '', area_id: null, assignee_id: assignees[0]?.user_id || null,
+    priority: 'normal', due_date: '', require_photo: true, require_approval: true,
+  });
+  const [images, setImages] = useState([]);   // 参考图片 URL 列表
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  // bootstrap 异步返回：assignees 到位后回填默认执行人（与重复任务表单同款逻辑）
+  useEffect(() => {
+    if (!assignees.length) return;
+    setF((p) => (assignees.some((u) => u.user_id === p.assignee_id) ? p : { ...p, assignee_id: (assignees.find((u) => u.role === 'maid') || assignees[0]).user_id }));
+  }, [assignees]);
+
+  const onAddImage = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    try { const url = await compressAndUploadImage(file, { kind: 'task' }); setImages((p) => [...p, url]); }
+    catch { showToast(en ? 'Upload failed' : '上传失败'); }
+    e.target.value = '';
+  };
+
+  const submit = async () => {
+    if (!f.task_name.trim()) return showToast(en ? 'Please enter task name' : '请填写任务名称');
+    if (!f.assignee_id) return showToast(en ? 'No helper yet — invite one first' : '还没有女佣，请先邀请');
+    if (!f.area_id) return showToast(en ? 'Please pick an area' : '请选择区域');
+    if (busy) return; setBusy(true);
+    try {
+      await api.createAdhocTask({ ...f, task_date: f.due_date || undefined, reference_images: images });
+      showToast(en ? 'Published ✓' : '已发布 ✓');
+      nav('/e/tasks', { replace: true });
+    } catch { showToast(en ? 'Failed' : '发布失败'); setBusy(false); }
+  };
+
+  return (
+    <>
+      <TopBar title={t('newTask')} />
+      <div className="content">
+        <div className="seg" style={{ marginBottom: 4 }}>
+          <button className="opt" onClick={onSwitchMode}>{t('repeatTaskTab')}</button>
+          <button className="opt on">{t('adhocTaskTab')}</button>
+        </div>
+        <div className="field">
+          <label>{t('taskName')} <span className="req">*</span></label>
+          <input className="input" value={f.task_name} maxLength={50} placeholder={en ? 'e.g. Move the balcony box' : '例如：把阳台箱子搬开'} onChange={(e) => set('task_name', e.target.value)} />
+        </div>
+        <div className="field">
+          <label>{t('taskImage')}</label>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible', alignItems: 'center', gap: 8 }}>
+            {images.map((url, i) => (
+              <div key={url} style={{ position: 'relative' }}>
+                <img src={url} alt="" style={{ width: 64, height: 64, borderRadius: 10, objectFit: 'cover' }} />
+                <button className="iconbtn" style={{ position: 'absolute', top: -8, right: -8, background: '#fff', borderRadius: '50%' }}
+                  onClick={() => setImages((p) => p.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+            <label className="btn sm outline" style={{ cursor: 'pointer', flex: 'none' }}>
+              📷 {t('addRefPhoto')}
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={onAddImage} />
+            </label>
+          </div>
+        </div>
+        <div className="field">
+          <label>{t('taskDesc')}</label>
+          <textarea className="input" value={f.description} placeholder={en ? 'Describe what needs to be done…' : '描述具体要求…'} onChange={(e) => set('description', e.target.value)} />
+        </div>
+        <div className="field">
+          <label>{t('area')} <span className="req">*</span></label>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {areas.map((a) => (
+              <button key={a.area_id} className={'chip' + (f.area_id === a.area_id ? ' on' : '')} onClick={() => set('area_id', a.area_id)}>
+                {a.icon} {pick(lang, a.name, a.name_en)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <label>{t('assignee')} <span className="req">*</span></label>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {assignees.length === 0 ? <span className="tiny muted">{en ? 'No helper yet — invite one first' : '还没有女佣，请先邀请'}</span> :
+              assignees.map((u) => (
+                <button key={u.user_id} className={'chip' + (f.assignee_id === u.user_id ? ' on' : '')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => set('assignee_id', u.user_id)}>
+                  <Avatar value={u.avatar} size={18} style={{ background: 'transparent' }} /> {u.name}
+                </button>
+              ))}
+          </div>
+        </div>
+        <div className="field">
+          <label>{t('priority')} <span className="req">*</span></label>
+          <div className="seg">
+            {['normal', 'important', 'urgent'].map((p) => (
+              <button key={p} className={'opt' + (f.priority === p ? ' on' : '')} onClick={() => set('priority', p)}>{t(p)}</button>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <label>{t('dueDateOptional')}</label>
+          <input className="input" type="date" value={f.due_date} onChange={(e) => set('due_date', e.target.value)} />
+          <div className="tiny muted" style={{ marginTop: 4 }}>{t('dueToday')}</div>
+        </div>
+        <div className="card" style={{ padding: '4px 16px' }}>
+          <Toggle label={t('requirePhoto')} on={f.require_photo} onClick={() => set('require_photo', !f.require_photo)} />
+          <Toggle label={t('requireApproval')} on={f.require_approval} onClick={() => set('require_approval', !f.require_approval)} />
+        </div>
+      </div>
+      <div className="actionbar">
+        <button className="btn primary block" disabled={busy} onClick={submit}>{t('publishTask')}</button>
+      </div>
+    </>
   );
 }

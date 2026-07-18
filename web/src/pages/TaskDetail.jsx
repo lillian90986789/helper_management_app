@@ -16,6 +16,8 @@ export default function TaskDetail() {
   const doneChecks = task.checklist.filter((c) => c.status === 'done').length;
   const allChecked = task.checklist.length === 0 || doneChecks === task.checklist.length;
   const hasPhoto = task.attachments.some((a) => a.file_type === 'image');
+  const refPhotos = task.attachments.filter((a) => a.file_type === 'reference');
+  const completionPhotos = task.attachments.filter((a) => a.file_type !== 'reference');
 
   const trans = async (to, action) => { await api.taskTransition(task.task_id, { to, action, actor_id: role === 'maid' ? 2 : 1 }); showToast('✓'); reload(); };
   const toggle = async (cid) => { await api.toggleCheck(cid); reload(); };
@@ -65,14 +67,24 @@ export default function TaskDetail() {
           </div>
         </>}
 
-        {/* 附件 / 完成照片 */}
+        {/* 雇主发布时的参考图片（只读） */}
+        {refPhotos.length > 0 && <>
+          <div className="section-title">📎 {lang === 'en' ? 'Reference photos' : '参考图片'}</div>
+          <div className="card">
+            <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+              {refPhotos.map((a) => <img key={a.attachment_id} src={a.file_url} alt="" onClick={() => window.open(a.file_url)} className="thumb lg" style={{ objectFit: 'cover', cursor: 'zoom-in' }} />)}
+            </div>
+          </div>
+        </>}
+
+        {/* 完成照片 */}
         <div className="section-title">📷 {t('attachments')} {task.require_photo && <span className="badge red tiny">{lang==='en'?'Required':'需照片'}</span>}</div>
         <div className="card">
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-            {task.attachments.map((a) => <div key={a.attachment_id} className="thumb lg">{a.file_url}</div>)}
+            {completionPhotos.map((a) => <div key={a.attachment_id} className="thumb lg">{a.file_url}</div>)}
             {role === 'maid' && ['in_progress','returned','received'].includes(task.status) &&
               <button className="thumb lg" style={{ border: '1.5px dashed var(--line)', background: '#fff' }} onClick={fakeUpload}>＋</button>}
-            {task.attachments.length === 0 && role !== 'maid' && <span className="muted small">{t('noData')}</span>}
+            {completionPhotos.length === 0 && role !== 'maid' && <span className="muted small">{t('noData')}</span>}
           </div>
         </div>
 
@@ -108,7 +120,7 @@ function Actions({ task, role, t, trans, submitDone, nav }) {
     return <Bar><B onClick={() => nav(-1)}>{t('back')}</B></Bar>;
   }
   // 雇主
-  const editTpl = () => nav(task.task_template_id ? '/task-new/' + task.task_template_id : '/task-new');
+  const editTpl = () => nav('/task-new/' + task.task_template_id);
   if (s === 'pending_review') return <Bar>
     <B onClick={() => trans('returned', '退回重做')} danger>↩ {t('returnRedo')}</B>
     <B onClick={() => trans('done', '确认完成')} primary flex2>✓ {t('confirmDone')}</B>
@@ -121,7 +133,7 @@ function Actions({ task, role, t, trans, submitDone, nav }) {
   </Bar>;
   return <Bar>
     <B onClick={() => trans('canceled', '取消任务')} danger>{t('cancelTask')}</B>
-    <B onClick={editTpl} primary>✎ {t('editTask')}</B>
+    {task.task_template_id && <B onClick={editTpl} primary>✎ {t('editTask')}</B>}
   </Bar>;
 }
 const Bar = ({ children }) => <div className="actionbar">{children}</div>;

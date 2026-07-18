@@ -46,6 +46,7 @@ const dict = {
     needPhotoHint: '此任务需上传照片才能提交',
     // new task
     taskName: '任务名称', taskDesc: '任务说明', taskImage: '任务图片', repeat: '是否重复', repeatFreq: '重复频率',
+    repeatTaskTab: '重复任务', adhocTaskTab: '临时任务', addRefPhoto: '添加参考图', dueDateOptional: '截止日期（可选）', dueToday: '不选默认今天',
     requirePhoto: '必须上传照片', requireApproval: '需要雇主审核', minDuration: '预计时长(分钟)',
     startTime: '开始时间', dueTime: '截止时间', saveDraft: '保存草稿', publishTask: '发布任务', preview: '预览女佣端',
     normal: '普通', important: '重要', urgent: '紧急', addSubtask: '添加子任务',
@@ -136,6 +137,7 @@ const dict = {
     editTask: 'Edit', confirmDone: 'Confirm Done', returnRedo: 'Return', reassign: 'Reassign', cancelTask: 'Cancel',
     needPhotoHint: 'Photo required before submitting',
     taskName: 'Task Name', taskDesc: 'Description', taskImage: 'Images', repeat: 'Repeat', repeatFreq: 'Frequency',
+    repeatTaskTab: 'Repeating', adhocTaskTab: 'One-off', addRefPhoto: 'Add photo', dueDateOptional: 'Due date (optional)', dueToday: 'Defaults to today',
     requirePhoto: 'Require Photo', requireApproval: 'Require Approval', minDuration: 'Duration (min)',
     startTime: 'Start Time', dueTime: 'Due Time', saveDraft: 'Save Draft', publishTask: 'Publish', preview: 'Preview',
     normal: 'Normal', important: 'Important', urgent: 'Urgent', addSubtask: 'Add Subtask',
