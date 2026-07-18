@@ -820,6 +820,28 @@ api.get('/daily/:id', async (req, res) => {
   const one = dailyWith(t); await localizeTasks(req, [one]);
   res.json(one);
 });
+// 临时任务：一次性派发，不走每周重复模板，直接生成一条 DailyTask（task_template_id=NULL）
+api.post('/daily', (req, res) => {
+  const family = curFamily(req);
+  const b = req.body;
+  if (!b.task_name || !String(b.task_name).trim()) return res.status(400).json({ error: 'task_name_required' });
+  if (!b.assignee_id) return res.status(400).json({ error: 'assignee_required' });
+  if (!b.area_id) return res.status(400).json({ error: 'area_required' });
+  const taskDate = /^\d{4}-\d{2}-\d{2}$/.test(b.task_date || '') ? b.task_date : todayYmd();
+  const d = parseYmd(taskDate);
+  const id = db.prepare(`INSERT INTO DailyTask
+    (task_template_id,family_id,task_date,weekday,assignee_id,task_name_snapshot,task_name_en_snapshot,description_snapshot,area_id,priority,estimated_duration,require_photo,minimum_photo_count,require_note,require_approval,sort_order,status)
+    VALUES (NULL,@fam,@date,@wd,@assignee,@n,@ne,@d,@area,@pri,@dur,@rp,@minp,@rn,@ra,0,'today_todo')`)
+    .run({ fam: family.family_id, date: taskDate, wd: isoWeekday(d), assignee: b.assignee_id,
+      n: String(b.task_name).trim(), ne: b.task_name_en || '', d: b.description || '', area: b.area_id,
+      pri: ['normal','important','urgent'].includes(b.priority) ? b.priority : 'normal',
+      dur: b.estimated_duration || 30, rp: b.require_photo ? 1 : 0, minp: b.minimum_photo_count || 1,
+      rn: b.require_note ? 1 : 0, ra: b.require_approval ? 1 : 0 }).lastInsertRowid;
+  (Array.isArray(b.reference_images) ? b.reference_images : []).forEach((url) =>
+    db.prepare(`INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?, 'reference', ?)`).run(id, req.userId, url));
+  notify(family.family_id, 'task', '新增临时任务：' + String(b.task_name).trim(), b.description || '', 'task', id, 'maid', b.assignee_id);
+  res.json(dailyWith(db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(id)));
+});
 api.post('/daily/:id/transition', (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
   if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
