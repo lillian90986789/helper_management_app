@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, PriorityBadge, fmtTime, Avatar } from '../ui.jsx';
+import { TopBar, StatusBadge, PriorityBadge, fmtTime, Avatar, ZoomImg } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function TaskDetail() {
@@ -72,7 +72,7 @@ export default function TaskDetail() {
           <div className="section-title">📎 {lang === 'en' ? 'Reference photos' : '参考图片'}</div>
           <div className="card">
             <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-              {refPhotos.map((a) => <img key={a.attachment_id} src={a.file_url} alt="" onClick={() => window.open(a.file_url)} className="thumb lg" style={{ objectFit: 'cover', cursor: 'zoom-in' }} />)}
+              {refPhotos.map((a) => <ZoomImg key={a.attachment_id} src={a.file_url} className="thumb lg" style={{ objectFit: 'cover' }} />)}
             </div>
           </div>
         </>}

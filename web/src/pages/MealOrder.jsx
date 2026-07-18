@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, fmtTime, CoverThumb } from '../ui.jsx';
+import { TopBar, StatusBadge, fmtTime, CoverThumb, ZoomImg } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function MealOrder() {
@@ -63,7 +63,7 @@ export default function MealOrder() {
               <span className="thumb" style={{ width: 26, height: 26, fontSize: 13, fontWeight: 800 }}>{s.step_number}</span>
               <div className="grow small">
                 {pick(lang, s.instruction, s.instruction_en)}
-                {s.image_url && <img src={s.image_url} alt="" onClick={() => window.open(s.image_url)} style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 10, marginTop: 6, display: 'block', cursor: 'zoom-in' }} />}
+                {s.image_url && <ZoomImg src={s.image_url} style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 10, marginTop: 6, display: 'block' }} />}
               </div>
             </div>
           ))}

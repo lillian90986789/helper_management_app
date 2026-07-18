@@ -117,6 +117,28 @@ export function Toast({ msg }) {
   return <div className="toast">{msg}</div>;
 }
 
+// 应用内大图预览：点击图片放大查看，点任意处关闭（避免 window.open 新开标签后回不到应用）
+export function Lightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div className="sheet-mask" style={{ alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 70 }} onClick={onClose}>
+      <img src={src} alt="" style={{ maxWidth: '100%', maxHeight: '80vh', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,.4)' }} />
+    </div>
+  );
+}
+
+// 缩略图 + 点击应用内放大，自带状态，直接替换原来 window.open 的 <img>
+export function ZoomImg({ src, className, style }) {
+  const [open, setOpen] = useState(false);
+  if (!src) return null;
+  return (
+    <>
+      <img src={src} alt="" className={className} onClick={() => setOpen(true)} style={{ cursor: 'zoom-in', ...style }} />
+      {open && <Lightbox src={src} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 export function Empty({ icon = '📭', text }) {
   return <div className="empty"><div className="ic">{icon}</div><div>{text}</div></div>;
 }
