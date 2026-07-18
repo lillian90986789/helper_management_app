@@ -152,6 +152,31 @@ function buildServer(token) {
     },
   }, async ({ shopping_list_id, ...rest }) => asResult(await call(token, 'POST', `/shopping/${shopping_list_id}/items`, rest)));
 
+  server.registerTool('upload_image', {
+    description: '上传图片到应用，返回 /uploads/... 地址，可用作菜谱封面(cover_image)或步骤配图(steps[].image_url)。' +
+      '二选一：source_url（服务器抓取该 http(s) 图片，推荐）或 image_base64（小图直传）',
+    inputSchema: {
+      source_url: z.string().optional().describe('图片外链 http(s) URL，服务器抓取后存储'),
+      image_base64: z.string().optional().describe('图片 base64（不含 data: 前缀亦可）'),
+      media_type: z.string().optional().describe('MIME 类型，如 image/jpeg，source_url 模式自动识别'),
+      kind: z.string().optional().describe('文件名前缀，默认 recipe'),
+    },
+  }, async ({ source_url, image_base64, media_type, kind }) => {
+    if (!image_base64 && !source_url) throw new Error('source_url 与 image_base64 至少提供一个');
+    if (source_url) {
+      if (!/^https?:\/\//i.test(source_url)) throw new Error('source_url 仅支持 http(s)');
+      const r = await fetch(source_url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error(`抓取失败 HTTP ${r.status}`);
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.startsWith('image/')) throw new Error(`不是图片（content-type: ${ct.slice(0, 60)}）`);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 8 * 1024 * 1024) throw new Error('图片超过 8MB');
+      image_base64 = buf.toString('base64');
+      media_type = ct.split(';')[0];
+    }
+    return asResult(await call(token, 'POST', '/upload-avatar', { image_base64, media_type, kind: kind || 'recipe' }));
+  });
+
   return server;
 }
 

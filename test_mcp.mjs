@@ -16,7 +16,7 @@ const parse = (r) => JSON.parse(r.content[0].text);
 
 // 1. 工具列表
 const tools = (await client.listTools()).tools.map((t) => t.name);
-check(`listTools 返回 11 个工具 (${tools.length})`, tools.length === 11);
+check(`listTools 返回 12 个工具 (${tools.length})`, tools.length === 12);
 
 // 2. 列菜谱（种子有 3 个）
 const recipes = parse(await client.callTool({ name: 'list_recipes', arguments: {} }));
@@ -53,6 +53,13 @@ const up = await fetch('http://127.0.0.1:8080/api/upload-avatar', { method: 'POS
 check(`上传接口 kind 前缀生效 (${up.url})`, /^\/uploads\/recipe_\d+/.test(up.url || ''));
 const served = await fetch('http://127.0.0.1:8080' + up.url);
 check('上传的图片可通过 /uploads 访问', served.ok);
+
+// MCP upload_image 工具：base64 直传
+const mcpUp = parse(await client.callTool({ name: 'upload_image', arguments: { image_base64: png1x1, media_type: 'image/png' } }));
+check(`MCP upload_image base64 上传 (${mcpUp.url})`, /^\/uploads\/recipe_\d+/.test(mcpUp.url || ''));
+// MCP upload_image 工具：source_url 抓取（用刚上传的图自举，不依赖外网）
+const mcpFetch = parse(await client.callTool({ name: 'upload_image', arguments: { source_url: 'http://127.0.0.1:8080' + mcpUp.url } }));
+check(`MCP upload_image source_url 抓取 (${mcpFetch.url})`, /^\/uploads\/recipe_\d+/.test(mcpFetch.url || ''));
 
 // 5. 修改
 const updated = parse(await client.callTool({ name: 'update_recipe', arguments: { recipe_id: created.recipe_id, notes: '1岁以上可加少量低钠酱油' } }));
