@@ -158,6 +158,11 @@ function buildServer(token) {
 // 挂载到现有 Express app：app.all('/mcp/:token')
 export function mountMcp(app) {
   app.all('/mcp/:token', async (req, res) => {
+    // 无状态模式不提供独立 SSE 流与会话：按 MCP 规范对 GET/DELETE 返回 405，
+    // 否则 SDK 会挂起 GET 请求不响应，导致 Claude.ai 连接器探测超时报"无法连接"
+    if (req.method === 'GET' || req.method === 'DELETE') {
+      return res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null });
+    }
     try {
       const server = buildServer(req.params.token);
       const transport = new StreamableHTTPServerTransport({
