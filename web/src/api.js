@@ -142,6 +142,7 @@ export const api = {
   recipeToShopping: (id) => req(`/recipes/${id}/to-shopping`, { method: 'POST' }),
   recipeToMeal: (id, body) => req(`/recipes/${id}/to-meal`, { method: 'POST', body }),
   meals: () => req('/meals'),
+  mealsWeek: () => req('/meals/week'),
   meal: (id) => req('/meals/' + id),
   mealTransition: (id, body) => req(`/meals/${id}/transition`, { method: 'POST', body }),
   deleteMeal: (id) => req(`/meals/${id}`, { method: 'DELETE' }),

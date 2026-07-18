@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useI18n } from './i18n.jsx';
+import { useI18n, pick } from './i18n.jsx';
 import { api } from './api.js';
 
 // 头像值是否为图片 URL（上传的本地图片 / data / http），否则视为 emoji
@@ -198,4 +198,65 @@ export function weekdaysText(arr, t) {
   if (arr.length === 2 && arr.includes(6) && arr.includes(7)) return t('weekend');
   const names = [t('mon'), t('tue'), t('wed'), t('thu'), t('fri'), t('sat'), t('sun')];
   return arr.map((d) => names[d - 1]).join('·');
+}
+
+// 本地当天日期 YYYY-MM-DD（与服务端 ymd() 同格式，用于跟本周日期数组比对）
+export function localYmd(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+// 本周（周一~周日）7 个日期，与服务端 mondayOf()/ymd() 的"周一起始"规则保持一致
+export function currentWeekDates() {
+  const now = new Date();
+  const day = now.getDay(); // 0=周日…6=周六
+  const diff = day === 0 ? 6 : day - 1;
+  const mon = new Date(now); mon.setDate(now.getDate() - diff);
+  return Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return localYmd(d); });
+}
+
+// 本周菜单：顶部 7 天日期胶囊 + 下方选中日的三餐；点击胶囊或在内容区左右滑动切换查看的那一天。
+// days: 来自 GET /meals/week 的 days 数组；onDelete 传入则显示删除按钮（雇主端），不传则只读（女佣端）。
+export function WeeklyMenu({ days, lang, t, onOpen, onDelete }) {
+  const todayIdx = days.findIndex((d) => d.isToday);
+  const [idx, setIdx] = useState(todayIdx >= 0 ? todayIdx : 0);
+  const day = days[idx];
+  const touchX = useRef(null);
+  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchX.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchX.current;
+    touchX.current = null;
+    if (dx < -40 && idx < 6) setIdx(idx + 1);
+    else if (dx > 40 && idx > 0) setIdx(idx - 1);
+  };
+  const labels = [t('monS'), t('tueS'), t('wedS'), t('thuS'), t('friS'), t('satS'), t('sunS')];
+  return (
+    <div>
+      <div className="row" style={{ gap: 4, justifyContent: 'space-between', marginBottom: 10 }}>
+        {days.map((d, i) => (
+          <button key={d.date} onClick={() => setIdx(i)} style={{
+            flex: 1, padding: '6px 2px', borderRadius: 10, textAlign: 'center', border: 'none',
+            background: i === idx ? 'var(--teal)' : 'transparent', color: i === idx ? '#fff' : 'var(--ink-2)',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700 }}>{labels[i]}</div>
+            <div style={{ fontSize: 11 }}>{+d.date.slice(8)}{d.meals.length > 0 ? ' ●' : ''}</div>
+          </button>
+        ))}
+      </div>
+      <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {day.meals.length === 0
+          ? <div className="empty tiny" style={{ padding: '8px 0' }}>{lang === 'en' ? 'No dishes' : '暂无菜品'}</div>
+          : day.meals.map((m) => (
+            <div key={m.meal_order_id} className="list-item" onClick={() => onOpen(m.meal_order_id)}>
+              <div className="thumb"><CoverThumb value={m.recipe.cover_image} /></div>
+              <div className="grow">
+                <div className="bold">{pick(lang, m.recipe.name, m.recipe.name_en)}</div>
+                <div className="small muted">{t(m.meal_type)} · {m.servings}{lang === 'en' ? ' ppl' : '人'}</div>
+              </div>
+              <StatusBadge status={m.status} />
+              {onDelete && <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={(e) => { e.stopPropagation(); onDelete(m); }} title={lang === 'en' ? 'Remove' : '删除'}>✕</button>}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
 }

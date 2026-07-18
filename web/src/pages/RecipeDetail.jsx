@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, CoverThumb } from '../ui.jsx';
+import { TopBar, CoverThumb, currentWeekDates, localYmd } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 // YouTube 链接转嵌入地址（watch?v= / youtu.be / shorts / embed 均可）；非 YouTube 返回 null
@@ -22,6 +22,8 @@ export default function RecipeDetail() {
   const [pickMeal, setPickMeal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
+  const weekDates = currentWeekDates();
+  const [mealDate, setMealDate] = useState(() => localYmd());
   const [busy, setBusy] = useState(false);
   if (!r) return <><TopBar title={t('recipes')} /><div className="empty">加载中…</div></>;
 
@@ -39,8 +41,12 @@ export default function RecipeDetail() {
   // 真实：安排到今日菜单（选餐次）
   const toMeal = async (meal_type) => {
     if (busy) return; setBusy(true);
-    try { await api.recipeToMeal(r.recipe_id, { meal_type }); setPickMeal(false); showToast(en ? 'Added to menu ✓' : '已安排到今日菜单 ✓'); nav('/e/home'); }
-    catch { showToast(en ? 'Failed' : '操作失败'); } setBusy(false);
+    try {
+      await api.recipeToMeal(r.recipe_id, { meal_type, meal_date: mealDate });
+      setPickMeal(false);
+      showToast(en ? 'Added to menu ✓' : '已安排到菜单 ✓');
+      nav('/e/home');
+    } catch { showToast(en ? 'Failed' : '操作失败'); } setBusy(false);
   };
 
   return (
@@ -116,7 +122,14 @@ export default function RecipeDetail() {
         <div className="sheet-mask" onClick={() => setPickMeal(false)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="bold">{t('arrangeToMenu')} · {t('mealType')}</div>
-            <div className="tiny muted" style={{ margin: '6px 0 12px' }}>{en ? 'Add to today’s menu' : '安排到今日菜单'}</div>
+            <div className="tiny muted" style={{ margin: '6px 0 8px' }}>{en ? 'Pick a day this week' : '选择本周哪一天'}</div>
+            <div className="row" style={{ gap: 6, marginBottom: 12 }}>
+              {weekDates.map((ds, i) => (
+                <button key={ds} className={'chip' + (mealDate === ds ? ' on' : '')} style={{ flex: 1, padding: '6px 4px', textAlign: 'center' }} onClick={() => setMealDate(ds)}>
+                  {[t('monS'),t('tueS'),t('wedS'),t('thuS'),t('friS'),t('satS'),t('sunS')][i]}{+ds.slice(8)}
+                </button>
+              ))}
+            </div>
             <div className="row" style={{ gap: 8 }}>
               {[['breakfast','🌅'],['lunch','🍚'],['dinner','🌙']].map(([mt, ic]) => (
                 <button key={mt} className="btn outline" style={{ flex: 1, flexDirection: 'column', height: 'auto', padding: '14px 4px' }} disabled={busy} onClick={() => toMeal(mt)}>
