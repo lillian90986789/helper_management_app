@@ -267,17 +267,29 @@ export function WeeklyMenu({ days, lang, t, onOpen, onDelete }) {
       <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {day.meals.length === 0
           ? <div className="empty tiny" style={{ padding: '8px 0' }}>{lang === 'en' ? 'No dishes' : '暂无菜品'}</div>
-          : day.meals.map((m) => (
-            <div key={m.meal_order_id} className="list-item" onClick={() => onOpen(m.meal_order_id)}>
-              <div className="thumb"><CoverThumb value={m.recipe.cover_image} /></div>
-              <div className="grow">
-                <div className="bold">{pick(lang, m.recipe.name, m.recipe.name_en)}</div>
-                <div className="small muted">{t(m.meal_type)} · {m.servings}{lang === 'en' ? ' ppl' : '人'}</div>
+          : [['breakfast', '🌅'], ['lunch', '🍚'], ['dinner', '🌙']].map(([mt, ic]) => {
+            const ms = day.meals.filter((m) => m.meal_type === mt);
+            if (!ms.length) return null;
+            return (
+              <div key={mt}>
+                <div className="tiny muted bold" style={{ padding: '8px 0 2px' }}>{ic} {t(mt)}</div>
+                {ms.map((m) => (
+                  <div key={m.meal_order_id} className="list-item" onClick={() => onOpen(m.meal_order_id)}>
+                    <div className="thumb"><CoverThumb value={m.recipe.cover_image} /></div>
+                    <div className="grow">
+                      <div className="bold">{pick(lang, m.recipe.name, m.recipe.name_en)}
+                        <span className={'badge tiny ' + (m.recipe.recipe_type === 'baby' ? 'purple' : 'teal')} style={{ marginLeft: 6 }}>
+                          {m.recipe.recipe_type === 'baby' ? t('baby') : t('adult')}</span>
+                      </div>
+                      <div className="small muted">{m.servings}{lang === 'en' ? ' ppl' : '人'}</div>
+                    </div>
+                    <StatusBadge status={m.status} />
+                    {onDelete && <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={(e) => { e.stopPropagation(); onDelete(m); }} title={lang === 'en' ? 'Remove' : '删除'}>✕</button>}
+                  </div>
+                ))}
               </div>
-              <StatusBadge status={m.status} />
-              {onDelete && <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={(e) => { e.stopPropagation(); onDelete(m); }} title={lang === 'en' ? 'Remove' : '删除'}>✕</button>}
-            </div>
-          ))}
+            );
+          })}
       </div>
     </div>
   );
