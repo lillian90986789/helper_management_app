@@ -134,10 +134,11 @@ function buildServer(token) {
   }, async ({ recipe_id }) => asResult(await call(token, 'POST', `/recipes/${recipe_id}/to-shopping`, {})));
 
   server.registerTool('recipe_to_meal', {
-    description: '把菜谱安排到今日菜单。meal_type: breakfast/lunch/dinner，默认 lunch',
+    description: '把菜谱安排到菜单。meal_type: breakfast/lunch/dinner，默认 lunch；meal_date 可选本周（周一~周日）任意一天，不填或超出本周则为今天',
     inputSchema: {
       recipe_id: z.number(),
       meal_type: z.enum(['breakfast', 'lunch', 'dinner']).optional(),
+      meal_date: z.string().optional().describe('用餐日期 YYYY-MM-DD，仅限本周（周一~周日），默认今天'),
       servings: z.number().optional(),
       notes: z.string().optional(),
     },
@@ -147,6 +148,11 @@ function buildServer(token) {
     description: '查看今日菜单（已安排的菜谱订单及状态）',
     inputSchema: {},
   }, async () => asResult(await call(token, 'GET', '/meals')));
+
+  server.registerTool('get_week_meals', {
+    description: '查看本周菜单（周一~周日每天的早/午/晚菜品及状态）',
+    inputSchema: {},
+  }, async () => asResult(await call(token, 'GET', '/meals/week')));
 
   server.registerTool('list_shopping_lists', {
     description: '列出全部采购清单（含状态、小票信息、金额核对结果）',

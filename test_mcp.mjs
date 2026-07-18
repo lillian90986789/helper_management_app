@@ -16,7 +16,7 @@ const parse = (r) => JSON.parse(r.content[0].text);
 
 // 1. 工具列表
 const tools = (await client.listTools()).tools.map((t) => t.name);
-check(`listTools 返回 13 个工具 (${tools.length})`, tools.length === 13);
+check(`listTools 返回 14 个工具 (${tools.length})`, tools.length === 14);
 
 // 2. 列菜谱（种子有 3 个）
 const recipes = parse(await client.callTool({ name: 'list_recipes', arguments: {} }));
@@ -84,6 +84,14 @@ check('add_shopping_item 分类正确', item.secondary_category === '调味品')
 await client.callTool({ name: 'recipe_to_meal', arguments: { recipe_id: created.recipe_id, meal_type: 'dinner' } });
 const meals = parse(await client.callTool({ name: 'get_today_meals', arguments: {} }));
 check('recipe_to_meal + get_today_meals 闭环', meals.some((m) => m.recipe?.recipe_id === created.recipe_id && m.meal_type === 'dinner'));
+
+// 8b. 指定 meal_date 安排到本周另一天 + 周菜单可见
+const week = parse(await client.callTool({ name: 'get_week_meals', arguments: {} }));
+const otherDay = week.days.find((d) => !d.isToday)?.date;
+await client.callTool({ name: 'recipe_to_meal', arguments: { recipe_id: created.recipe_id, meal_type: 'lunch', meal_date: otherDay } });
+const week2 = parse(await client.callTool({ name: 'get_week_meals', arguments: {} }));
+const placed = week2.days.find((d) => d.date === otherDay)?.meals.some((m) => m.recipe?.recipe_id === created.recipe_id && m.meal_type === 'lunch');
+check(`meal_date 指定本周其他日期生效 (${otherDay})`, !!placed);
 
 // 9. 无效 token 被拒
 const badClient = new Client({ name: 'bad', version: '1.0.0' });
