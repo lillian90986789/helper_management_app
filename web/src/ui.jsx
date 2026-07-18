@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useI18n } from './i18n.jsx';
+import { useI18n, pick } from './i18n.jsx';
 import { api } from './api.js';
 
 // 头像值是否为图片 URL（上传的本地图片 / data / http），否则视为 emoji
@@ -198,4 +198,17 @@ export function weekdaysText(arr, t) {
   if (arr.length === 2 && arr.includes(6) && arr.includes(7)) return t('weekend');
   const names = [t('mon'), t('tue'), t('wed'), t('thu'), t('fri'), t('sat'), t('sun')];
   return arr.map((d) => names[d - 1]).join('·');
+}
+
+// 本地当天日期 YYYY-MM-DD（与服务端 ymd() 同格式，用于跟本周日期数组比对）
+export function localYmd(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+// 本周（周一~周日）7 个日期，与服务端 mondayOf()/ymd() 的"周一起始"规则保持一致
+export function currentWeekDates() {
+  const now = new Date();
+  const day = now.getDay(); // 0=周日…6=周六
+  const diff = day === 0 ? 6 : day - 1;
+  const mon = new Date(now); mon.setDate(now.getDate() - diff);
+  return Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return localYmd(d); });
 }
