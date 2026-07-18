@@ -16,7 +16,7 @@ const parse = (r) => JSON.parse(r.content[0].text);
 
 // 1. 工具列表
 const tools = (await client.listTools()).tools.map((t) => t.name);
-check(`listTools 返回 12 个工具 (${tools.length})`, tools.length === 12);
+check(`listTools 返回 13 个工具 (${tools.length})`, tools.length === 13);
 
 // 2. 列菜谱（种子有 3 个）
 const recipes = parse(await client.callTool({ name: 'list_recipes', arguments: {} }));
@@ -60,6 +60,13 @@ check(`MCP upload_image base64 上传 (${mcpUp.url})`, /^\/uploads\/recipe_\d+/.
 // MCP upload_image 工具：source_url 抓取（用刚上传的图自举，不依赖外网）
 const mcpFetch = parse(await client.callTool({ name: 'upload_image', arguments: { source_url: 'http://127.0.0.1:8080' + mcpUp.url } }));
 check(`MCP upload_image source_url 抓取 (${mcpFetch.url})`, /^\/uploads\/recipe_\d+/.test(mcpFetch.url || ''));
+
+// get_video_title：用本站首页自举测 <title> 解析路径（不依赖外网）
+const vt = parse(await client.callTool({ name: 'get_video_title', arguments: { url: 'http://127.0.0.1:8080/' } }));
+check(`get_video_title 解析标题 (${vt.title})`, !!vt.title);
+// create_recipe 未给 name 时自动用页面/视频标题补名
+const auto = parse(await client.callTool({ name: 'create_recipe', arguments: { video_url: 'http://127.0.0.1:8080/' } }));
+check(`create_recipe 自动补名 (${auto.name})`, auto.name === vt.title && auto.video_url === 'http://127.0.0.1:8080/');
 
 // 5. 修改
 const updated = parse(await client.callTool({ name: 'update_recipe', arguments: { recipe_id: created.recipe_id, notes: '1岁以上可加少量低钠酱油' } }));

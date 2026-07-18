@@ -29,6 +29,29 @@ async function call(token, method, path, body) {
 
 const asResult = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] });
 
+// 解析视频标题：YouTube 走 oEmbed（无需 key），其他站点抓页面 og:title / <title>
+const decodeEntities = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n));
+async function fetchVideoTitle(url) {
+  if (!/^https?:\/\//i.test(url || '')) throw new Error('仅支持 http(s) 链接');
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?.*?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/);
+  if (yt) {
+    const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + yt[1])}&format=json`,
+      { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`视频不存在或不可访问 (HTTP ${r.status})`);
+    const j = await r.json();
+    return { title: j.title, author: j.author_name, provider: 'YouTube' };
+  }
+  const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`页面不可访问 (HTTP ${r.status})`);
+  const html = (await r.text()).slice(0, 200000);
+  const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
+  const title = og?.[1] || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+  if (!title) throw new Error('无法从页面解析标题');
+  return { title: decodeEntities(title.trim()), provider: new URL(url).hostname };
+}
+
 const ingredientShape = z.object({
   name: z.string().describe('食材名（中文）'),
   name_en: z.string().optional().describe('食材英文名'),
@@ -61,7 +84,7 @@ function buildServer(token) {
   server.registerTool('create_recipe', {
     description: '新建菜谱（含双语名称、食材、步骤）。recipe_type: adult=大人, baby=宝宝；difficulty: easy/normal/hard',
     inputSchema: {
-      name: z.string().describe('菜名（中文）'),
+      name: z.string().optional().describe('菜名（中文）；不填且提供 video_url 时自动用视频标题'),
       name_en: z.string().optional().describe('菜名（英文）'),
       recipe_type: z.enum(['adult', 'baby']).optional(),
       category: z.string().optional().describe('分类，默认 家常菜'),
@@ -75,7 +98,15 @@ function buildServer(token) {
       ingredients: z.array(ingredientShape).optional(),
       steps: z.array(stepShape).optional(),
     },
-  }, async (args) => asResult(await call(token, 'POST', '/recipes', args)));
+  }, async (args) => {
+    if (!args.name?.trim() && args.video_url) args.name = (await fetchVideoTitle(args.video_url)).title;
+    return asResult(await call(token, 'POST', '/recipes', args));
+  });
+
+  server.registerTool('get_video_title', {
+    description: '获取视频链接的标题（YouTube 走官方 oEmbed，其他站点解析页面 og:title/<title>）。可用于给菜谱起名',
+    inputSchema: { url: z.string().describe('视频页面 http(s) URL') },
+  }, async ({ url }) => asResult(await fetchVideoTitle(url)));
 
   server.registerTool('update_recipe', {
     description: '修改菜谱。传入的字段覆盖原值；ingredients/steps 传入时整组重建',
