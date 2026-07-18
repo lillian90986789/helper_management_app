@@ -2,20 +2,21 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { StatusBadge, fmtTime, CoverThumb } from '../ui.jsx';
+import { WeeklyMenu } from '../ui.jsx';
 
 export default function EmployerHome() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const { data, reload } = useAsync(() => api.dashEmployer());
+  const { data: week, reload: reloadWeek } = useAsync(() => api.mealsWeek());
   const { data: sub } = useAsync(() => api.subCurrent().catch(() => null));
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
-  const { summary, meals, shoppingSummary, notifications, family } = data;
+  const { summary, shoppingSummary, notifications, family } = data;
   const unread = notifications.filter((n) => !n.is_read).length;
-  const delMeal = async (e, m) => {
-    e.stopPropagation();
-    if (!window.confirm(lang === 'en' ? `Remove "${m.recipe_name}" from today's menu?` : `从今日菜单删除「${m.recipe_name}」？`)) return;
-    await api.deleteMeal(m.meal_order_id); reload();
+  const delMeal = async (m) => {
+    const name = pick(lang, m.recipe.name, m.recipe.name_en);
+    if (!window.confirm(lang === 'en' ? `Remove "${name}" from the menu?` : `从菜单删除「${name}」？`)) return;
+    await api.deleteMeal(m.meal_order_id); reloadWeek();
   };
 
   return (
@@ -67,22 +68,10 @@ export default function EmployerHome() {
           </div>
         </div>
 
-        {/* 今日菜单卡片 */}
+        {/* 本周菜单卡片 */}
         <div className="section-title">🍽️ {t('todayMenu')}</div>
         <div className="card">
-          {meals.slice(0, 4).map((m) => (
-            <div key={m.meal_order_id} className="list-item" onClick={() => nav('/meal/' + m.meal_order_id)}>
-              <div className="thumb"><CoverThumb value={m.cover_image} /></div>
-              <div className="grow">
-                <div className="bold">{pick(lang, m.recipe_name, m.recipe_name_en)}
-                  {m.status === 'pending_review' && <span className="badge amber tiny" style={{ marginLeft: 6 }}>{t('pendingReview')}</span>}</div>
-                <div className="small muted">{t(m.meal_type)} · {m.servings}{lang==='en'?' ppl':'人'} · {fmtTime(m.start_time)}</div>
-              </div>
-              <StatusBadge status={m.status} />
-              <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={(e) => delMeal(e, m)} title={lang==='en'?'Remove':'删除'}>✕</button>
-            </div>
-          ))}
-          {meals.length === 0 && <div className="empty tiny" style={{ padding: '8px 0' }}>{lang==='en'?'No dishes today':'今日暂无菜品'}</div>}
+          {week ? <WeeklyMenu days={week.days} lang={lang} t={t} onOpen={(id) => nav('/meal/' + id)} onDelete={delMeal} /> : <div className="empty tiny">加载中…</div>}
           <button className="btn sm outline block mt12" onClick={() => nav('/e/recipes')}>{t('arrangeMenu')}</button>
         </div>
 
