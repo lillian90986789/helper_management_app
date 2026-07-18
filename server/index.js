@@ -1193,11 +1193,12 @@ api.post('/recipes', (req, res) => {
   const family = curFamily(req);
   const b = req.body;
   if (!b.name || !b.name.trim()) return res.status(400).json({ error: 'name_required' });
-  const id = db.prepare(`INSERT INTO Recipe (family_id,name,name_en,recipe_type,category,cover_image,servings,duration,difficulty,suitable_age,allergen_info,notes,status,creator_id)
-    VALUES (@family_id,@name,@name_en,@recipe_type,@category,@cover_image,@servings,@duration,@difficulty,@suitable_age,@allergen_info,@notes,'published',1)`)
+  const id = db.prepare(`INSERT INTO Recipe (family_id,name,name_en,recipe_type,category,cover_image,servings,duration,difficulty,suitable_age,allergen_info,notes,video_url,status,creator_id)
+    VALUES (@family_id,@name,@name_en,@recipe_type,@category,@cover_image,@servings,@duration,@difficulty,@suitable_age,@allergen_info,@notes,@video_url,'published',1)`)
     .run({ family_id: family.family_id, name: b.name.trim(), name_en: b.name_en || '', recipe_type: b.recipe_type === 'baby' ? 'baby' : 'adult',
       category: b.category || '家常菜', cover_image: b.cover_image || '🍲', servings: b.servings || 2, duration: b.duration || 30,
-      difficulty: ['easy','normal','hard'].includes(b.difficulty) ? b.difficulty : 'normal', suitable_age: b.suitable_age || '', allergen_info: b.allergen_info || '', notes: b.notes || '' }).lastInsertRowid;
+      difficulty: ['easy','normal','hard'].includes(b.difficulty) ? b.difficulty : 'normal', suitable_age: b.suitable_age || '', allergen_info: b.allergen_info || '', notes: b.notes || '',
+      video_url: b.video_url || null }).lastInsertRowid;
   (b.ingredients || []).filter((i) => i.name && i.name.trim()).forEach((i) => db.prepare(`INSERT INTO RecipeIngredient (recipe_id,name,name_en,quantity,unit,required,substitute) VALUES (?,?,?,?,?,?,?)`)
     .run(id, i.name.trim(), i.name_en || '', i.quantity || '', i.unit || '', i.required === false ? 0 : 1, i.substitute || ''));
   (b.steps || []).filter((s) => (s.instruction || '').trim()).forEach((s, idx) => db.prepare(`INSERT INTO RecipeStep (recipe_id,step_number,instruction,instruction_en,image_url,duration) VALUES (?,?,?,?,?,?)`)
@@ -1214,12 +1215,12 @@ api.patch('/recipes/:id', (req, res) => {
     db.prepare(`UPDATE Recipe SET name=COALESCE(@name,name), name_en=COALESCE(@name_en,name_en), recipe_type=COALESCE(@recipe_type,recipe_type),
         category=COALESCE(@category,category), cover_image=COALESCE(@cover_image,cover_image), servings=COALESCE(@servings,servings),
         duration=COALESCE(@duration,duration), difficulty=COALESCE(@difficulty,difficulty), suitable_age=COALESCE(@suitable_age,suitable_age),
-        notes=COALESCE(@notes,notes) WHERE recipe_id=@id`)
+        notes=COALESCE(@notes,notes), video_url=CASE WHEN @has_video_url THEN @video_url ELSE video_url END WHERE recipe_id=@id`)
       .run({ name: b.name !== undefined ? String(b.name).trim() : null, name_en: b.name_en ?? null,
         recipe_type: b.recipe_type ? (b.recipe_type === 'baby' ? 'baby' : 'adult') : null,
         category: b.category ?? null, cover_image: b.cover_image ?? null, servings: b.servings ?? null, duration: b.duration ?? null,
         difficulty: ['easy','normal','hard'].includes(b.difficulty) ? b.difficulty : null, suitable_age: b.suitable_age ?? null,
-        notes: b.notes ?? null, id: r.recipe_id });
+        notes: b.notes ?? null, has_video_url: b.video_url !== undefined ? 1 : 0, video_url: b.video_url || null, id: r.recipe_id });
     if (b.ingredients) {
       db.prepare('DELETE FROM RecipeIngredient WHERE recipe_id=?').run(r.recipe_id);
       b.ingredients.filter((i) => i.name && i.name.trim()).forEach((i) => db.prepare(`INSERT INTO RecipeIngredient (recipe_id,name,name_en,quantity,unit,required,substitute) VALUES (?,?,?,?,?,?,?)`)

@@ -55,6 +55,7 @@ export default function RecipeDetail() {
             <span className="badge gray">📊 {t(r.difficulty)}</span>
           </div>
           {r.suitable_age && <div className="small muted mt8">👶 {lang==='en'?'Suitable age: ':'适合月龄：'}{r.suitable_age} · {r.notes}</div>}
+          {r.video_url && <button className="btn sm outline mt12" onClick={() => window.open(r.video_url, '_blank', 'noopener,noreferrer')}>▶️ {t('watchVideo')}</button>}
         </div>
 
         {/* 食材 */}

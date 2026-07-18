@@ -15,7 +15,7 @@ export default function RecipeNew() {
   const editing = !!id;
   const { showToast } = useApp();
   const [f, setF] = useState({ name: '', recipe_type: 'adult', cover_image: '🍲', category: en ? 'Home cooking' : '家常菜',
-    servings: 3, duration: 30, difficulty: 'normal', suitable_age: '', notes: '' });
+    servings: 3, duration: 30, difficulty: 'normal', suitable_age: '', notes: '', video_url: '' });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const [ings, setIngs] = useState([{ name: '', quantity: '', unit: '' }]);
   const [steps, setSteps] = useState([{ instruction: '' }]);
@@ -27,7 +27,7 @@ export default function RecipeNew() {
     api.recipe(id).then((r) => {
       setF({ name: r.name || '', recipe_type: r.recipe_type || 'adult', cover_image: r.cover_image || '🍲',
         category: r.category || (en ? 'Home cooking' : '家常菜'), servings: r.servings || 3, duration: r.duration || 30,
-        difficulty: r.difficulty || 'normal', suitable_age: r.suitable_age || '', notes: r.notes || '' });
+        difficulty: r.difficulty || 'normal', suitable_age: r.suitable_age || '', notes: r.notes || '', video_url: r.video_url || '' });
       setIngs(r.ingredients?.length ? r.ingredients.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit })) : [{ name: '', quantity: '', unit: '' }]);
       setSteps(r.steps?.length ? r.steps.map((s) => ({ instruction: s.instruction, image_url: s.image_url || '' })) : [{ instruction: '' }]);
     }).catch(() => showToast(en ? 'Load failed' : '加载失败'));
@@ -63,6 +63,10 @@ export default function RecipeNew() {
         <div className="field">
           <label>{en ? 'Cover' : '封面'} <span className="tiny muted">（{en ? 'pick an emoji or upload a photo' : '选表情或上传本地图片'}）</span></label>
           <AvatarPicker value={f.cover_image} onChange={(v) => set('cover_image', v)} emojis={EMOJIS} showToast={showToast} />
+        </div>
+        <div className="field">
+          <label>{t('videoUrl')}</label>
+          <input className="input" value={f.video_url} placeholder="https://youtube.com/watch?v=..." onChange={(e) => set('video_url', e.target.value)} />
         </div>
         <div className="field">
           <label>{en ? 'Recipe name' : '菜谱名称'} <span className="req">*</span></label>

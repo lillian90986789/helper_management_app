@@ -416,6 +416,8 @@ addCol('Family', 'updated_at', 'TEXT');
 // Area → 对应 PRD FamilyArea
 addCol('Area', 'sort_order', 'INTEGER DEFAULT 0');
 addCol('Area', 'status', "TEXT DEFAULT 'active'");
+// Recipe → 菜谱整体可选挂一个视频教程链接（YouTube 或其他视频站点，不做格式校验）
+addCol('Recipe', 'video_url', 'TEXT');
 // DailyTask → 任务清单模块（日历 + 休息日）第 9.2 节新增字段
 addCol('DailyTask', 'weekday', 'INTEGER');               // 1=周一 … 7=周日，便于日历快速展示
 addCol('DailyTask', 'is_rest_day_task', 'INTEGER DEFAULT 0'); // 是否为休息日特别任务
