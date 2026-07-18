@@ -68,7 +68,8 @@ export default function RecipeDetail() {
             <span className="badge gray">📊 {t(r.difficulty)}</span>
           </div>
           {r.suitable_age && <div className="small muted mt8">👶 {lang==='en'?'Suitable age: ':'适合月龄：'}{r.suitable_age} · {r.notes}</div>}
-          {r.video_url && <button className="btn sm outline mt12" onClick={() => {
+          {/* 仅渲染 http(s) 链接，防止存入 javascript:/data: 等可执行 scheme */}
+          {/^https?:\/\//i.test(r.video_url || '') && <button className="btn sm outline mt12" onClick={() => {
             // YouTube 在应用内弹层播放，避免新开标签后回不到应用；其他站点当前页打开（返回键可回）
             if (youtubeEmbed(r.video_url)) setShowVideo(true);
             else window.location.href = r.video_url;
