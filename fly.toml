@@ -1,8 +1,8 @@
 # Fly.io 部署配置 —— 详见 https://fly.io/docs/reference/configuration/
 # 部署前把 app 改成一个全局唯一的名字（会成为 https://<app>.fly.dev）
 
-app = "homeflow-gaoqinghong"
-primary_region = "hkg"          # 香港机房，离港澳台/大陆较近；也可 sin(新加坡)/nrt(东京)
+app = "homeflow-lillian"
+primary_region = "sin"          # 新加坡机房（hkg 已下线）；也可 nrt(东京)
 
 [build]
   dockerfile = "Dockerfile"
