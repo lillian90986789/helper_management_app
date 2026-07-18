@@ -1262,16 +1262,20 @@ api.post('/recipes/:id/to-shopping', (req, res) => {
   notify(family.family_id, 'shopping', '新采购清单', '从菜谱「' + r.name + '」生成 ' + ings.length + ' 项食材', 'shopping', lid, 'maid');
   res.json(listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(lid)));
 });
-// 从菜谱一键安排到今日菜单
+// 从菜谱一键安排到本周任意一天的菜单（默认今天；meal_date 必须落在本周 7 天内，否则回退今天）
 api.post('/recipes/:id/to-meal', (req, res) => {
   const family = curFamily(req);
   const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
   if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const mt = ['breakfast','lunch','dinner'].includes(b.meal_type) ? b.meal_type : 'lunch';
+  const mon = mondayOf(new Date());
+  const weekDates = Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return ymd(d); });
+  const mealDate = weekDates.includes(b.meal_date) ? b.meal_date : todayYmd();
   const mid = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,assignee_id,status,notes) VALUES (?,?,?,?,?,?, 'to_receive', ?)`)
-    .run(family.family_id, r.recipe_id, todayYmd(), mt, b.servings || r.servings || 2, defaultHelperId(family.family_id), b.notes || '').lastInsertRowid;
-  notify(family.family_id, 'meal', '新菜单安排', '「' + r.name + '」已安排到' + ({breakfast:'早餐',lunch:'午餐',dinner:'晚餐'}[mt]), 'meal', mid, 'maid');
+    .run(family.family_id, r.recipe_id, mealDate, mt, b.servings || r.servings || 2, defaultHelperId(family.family_id), b.notes || '').lastInsertRowid;
+  const dayLabel = mealDate === todayYmd() ? '今日' : (mealDate.slice(5) + ' ');
+  notify(family.family_id, 'meal', '新菜单安排', '「' + r.name + '」已安排到' + dayLabel + ({breakfast:'早餐',lunch:'午餐',dinner:'晚餐'}[mt]), 'meal', mid, 'maid');
   res.json(db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(mid));
 });
 
