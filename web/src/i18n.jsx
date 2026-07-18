@@ -52,7 +52,7 @@ const dict = {
     // recipe
     recipeType: '类型', ingredients: '食材', steps: '烹饪步骤', servings: '份数', duration: '制作时间', difficulty: '难度', easy: '简单', hard: '复杂',
     addToCart: '加入采购清单', arrangeToMenu: '安排到菜单', favorite: '收藏', requiredIng: '必需', optionalIng: '可选',
-    videoUrl: '视频教程链接', watchVideo: '观看视频教程',
+    videoUrl: '视频教程链接', watchVideo: '观看视频教程', close: '关闭',
     confirmRead: '确认已阅读',
     // meal order
     mealOrder: '菜谱订单', mealDate: '用餐日期', mealType: '餐次', diners: '用餐人数', missingIng: '缺少食材', resultPhoto: '完成照片', maidNote: '女佣备注',
@@ -141,7 +141,7 @@ const dict = {
     normal: 'Normal', important: 'Important', urgent: 'Urgent', addSubtask: 'Add Subtask',
     recipeType: 'Type', ingredients: 'Ingredients', steps: 'Steps', servings: 'Servings', duration: 'Time', difficulty: 'Difficulty', easy: 'Easy', hard: 'Hard',
     addToCart: 'Add to Shopping', arrangeToMenu: 'Arrange', favorite: 'Favorite', requiredIng: 'Required', optionalIng: 'Optional',
-    videoUrl: 'Video tutorial link', watchVideo: 'Watch video tutorial',
+    videoUrl: 'Video tutorial link', watchVideo: 'Watch video tutorial', close: 'Close',
     confirmRead: 'Mark as Read',
     mealOrder: 'Meal Order', mealDate: 'Date', mealType: 'Meal', diners: 'Diners', missingIng: 'Missing', resultPhoto: 'Result Photo', maidNote: 'Helper Note',
     received: 'Received', markMissing: 'Mark Missing', uploadResult: 'Upload Photo', cookDone: 'Done Cooking',
