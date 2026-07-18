@@ -113,8 +113,8 @@ export default function RecipeDetail() {
             <div className="tiny muted" style={{ margin: '6px 0 8px' }}>{en ? 'Pick a day this week' : '选择本周哪一天'}</div>
             <div className="row" style={{ gap: 6, marginBottom: 12 }}>
               {weekDates.map((ds, i) => (
-                <button key={ds} className={'chip' + (mealDate === ds ? ' on' : '')} onClick={() => setMealDate(ds)}>
-                  {[t('monS'),t('tueS'),t('wedS'),t('thuS'),t('friS'),t('satS'),t('sunS')][i]}{ds.slice(8)}
+                <button key={ds} className={'chip' + (mealDate === ds ? ' on' : '')} style={{ flex: 1, padding: '6px 4px', textAlign: 'center' }} onClick={() => setMealDate(ds)}>
+                  {[t('monS'),t('tueS'),t('wedS'),t('thuS'),t('friS'),t('satS'),t('sunS')][i]}{+ds.slice(8)}
                 </button>
               ))}
             </div>
