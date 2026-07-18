@@ -200,6 +200,12 @@ function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
+  // bootstrap 异步返回：assignees 到位后回填默认执行人（与重复任务表单同款逻辑）
+  useEffect(() => {
+    if (!assignees.length) return;
+    setF((p) => (assignees.some((u) => u.user_id === p.assignee_id) ? p : { ...p, assignee_id: (assignees.find((u) => u.role === 'maid') || assignees[0]).user_id }));
+  }, [assignees]);
+
   const onAddImage = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     try { const url = await compressAndUploadImage(file, { kind: 'task' }); setImages((p) => [...p, url]); }
