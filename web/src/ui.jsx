@@ -127,6 +127,37 @@ export function Lightbox({ src, onClose }) {
   );
 }
 
+// YouTube 链接转嵌入地址（watch?v= / youtu.be / shorts / embed 均可）；非 YouTube 返回 null
+export function youtubeEmbed(url) {
+  const m = String(url || '').match(/(?:youtube\.com\/(?:watch\?.*?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/);
+  return m ? `https://www.youtube.com/embed/${m[1]}?autoplay=1&playsinline=1` : null;
+}
+
+// 「观看视频教程」按钮：YouTube 应用内弹层播放（不跳出应用），其他站点当前页打开（返回键可回）。
+// 仅对 http(s) 链接渲染，防止 javascript:/data: 等可执行 scheme。无链接时不渲染。
+export function VideoButton({ url }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  if (!/^https?:\/\//i.test(url || '')) return null;
+  return (
+    <>
+      <button className="btn sm outline mt12" onClick={() => { if (youtubeEmbed(url)) setOpen(true); else window.location.href = url; }}>
+        ▶️ {t('watchVideo')}</button>
+      {open && (
+        <div className="sheet-mask" style={{ alignItems: 'center', padding: 16, zIndex: 70 }} onClick={() => setOpen(false)}>
+          <div style={{ width: '100%' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', background: '#000', borderRadius: 12, overflow: 'hidden' }}>
+              <iframe src={youtubeEmbed(url)} title={t('watchVideo')} allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} />
+            </div>
+            <button className="btn outline block" style={{ marginTop: 12, background: 'var(--card)' }} onClick={() => setOpen(false)}>✕ {t('close')}</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // 缩略图 + 点击应用内放大，自带状态，直接替换原来 window.open 的 <img>
 export function ZoomImg({ src, className, style }) {
   const [open, setOpen] = useState(false);

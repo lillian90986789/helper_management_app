@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, fmtTime, CoverThumb, ZoomImg } from '../ui.jsx';
+import { TopBar, StatusBadge, fmtTime, CoverThumb, ZoomImg, VideoButton } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function MealOrder() {
@@ -33,6 +33,7 @@ export default function MealOrder() {
             <span className="badge gray">⏰ {fmtTime(m.start_time)}</span>
           </div>
           {m.notes && <div className="small muted mt8">📝 {m.notes}</div>}
+          <VideoButton url={m.recipe.video_url} />
         </div>
 
         {/* 食材清单 */}

@@ -3,14 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, CoverThumb, currentWeekDates, localYmd, ZoomImg } from '../ui.jsx';
+import { TopBar, CoverThumb, currentWeekDates, localYmd, ZoomImg, VideoButton } from '../ui.jsx';
 import { useApp } from '../App.jsx';
-
-// YouTube 链接转嵌入地址（watch?v= / youtu.be / shorts / embed 均可）；非 YouTube 返回 null
-function youtubeEmbed(url) {
-  const m = String(url || '').match(/(?:youtube\.com\/(?:watch\?.*?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/);
-  return m ? `https://www.youtube.com/embed/${m[1]}?autoplay=1&playsinline=1` : null;
-}
 
 export default function RecipeDetail() {
   const { id } = useParams();
@@ -21,7 +15,6 @@ export default function RecipeDetail() {
   const { data: r, reload } = useAsync(() => api.recipe(id), [id]);
   const [pickMeal, setPickMeal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const [showVideo, setShowVideo] = useState(false);
   const weekDates = currentWeekDates();
   const [mealDate, setMealDate] = useState(() => localYmd());
   const [busy, setBusy] = useState(false);
@@ -68,12 +61,7 @@ export default function RecipeDetail() {
             <span className="badge gray">📊 {t(r.difficulty)}</span>
           </div>
           {r.suitable_age && <div className="small muted mt8">👶 {lang==='en'?'Suitable age: ':'适合月龄：'}{r.suitable_age} · {r.notes}</div>}
-          {/* 仅渲染 http(s) 链接，防止存入 javascript:/data: 等可执行 scheme */}
-          {/^https?:\/\//i.test(r.video_url || '') && <button className="btn sm outline mt12" onClick={() => {
-            // YouTube 在应用内弹层播放，避免新开标签后回不到应用；其他站点当前页打开（返回键可回）
-            if (youtubeEmbed(r.video_url)) setShowVideo(true);
-            else window.location.href = r.video_url;
-          }}>▶️ {t('watchVideo')}</button>}
+          <VideoButton url={r.video_url} />
         </div>
 
         {/* 食材 */}
@@ -143,18 +131,6 @@ export default function RecipeDetail() {
         </div>
       )}
 
-      {/* 视频教程：应用内弹层播放，不跳出应用 */}
-      {showVideo && (
-        <div className="sheet-mask" style={{ alignItems: 'center', padding: 16 }} onClick={() => setShowVideo(false)}>
-          <div style={{ width: '100%' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', background: '#000', borderRadius: 12, overflow: 'hidden' }}>
-              <iframe src={youtubeEmbed(r.video_url)} title={t('watchVideo')} allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} />
-            </div>
-            <button className="btn outline block" style={{ marginTop: 12, background: 'var(--card)' }} onClick={() => setShowVideo(false)}>✕ {t('close')}</button>
-          </div>
-        </div>
-      )}
 
       {/* 删除菜谱确认 */}
       {confirmDel && (
