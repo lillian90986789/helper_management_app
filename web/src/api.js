@@ -151,6 +151,7 @@ export const api = {
   shoppingLists: () => req('/shopping'),
   shopping: (id) => req('/shopping/' + id),
   createList: (body) => req('/shopping', { method: 'POST', body }),
+  deleteList: (id) => req(`/shopping/${id}`, { method: 'DELETE' }),
   patchList: (id, body) => req(`/shopping/${id}`, { method: 'PATCH', body }),
   addItem: (listId, body) => req(`/shopping/${listId}/items`, { method: 'POST', body }),
   deleteItem: (id) => req(`/items/${id}`, { method: 'DELETE' }),

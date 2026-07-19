@@ -1504,6 +1504,16 @@ api.get('/shopping/:id', async (req, res) => {
   const ll = listWith(l); await localizeLists(req, ll);
   res.json(ll);
 });
+// 雇主删除整个采购清单（连同其下所有商品）
+api.delete('/shopping/:id', (req, res) => {
+  const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
+  if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM ShoppingItem WHERE shopping_list_id=?').run(l.shopping_list_id);
+    db.prepare('DELETE FROM ShoppingList WHERE shopping_list_id=?').run(l.shopping_list_id);
+  })();
+  res.json({ ok: true });
+});
 // 雇主创建采购清单
 api.post('/shopping', (req, res) => {
   const family = curFamily(req);
@@ -1604,8 +1614,13 @@ api.patch('/items/:id', (req, res) => {
   const pc = b.primary_category ?? it.primary_category ?? '其他';
   const sc = b.secondary_category !== undefined ? b.secondary_category : it.secondary_category;
   db.prepare(`UPDATE ShoppingItem SET status=COALESCE(@status,status), actual_quantity=@aq, actual_unit_price=@ap, discount=@disc, actual_total=@total,
-      primary_category=@pc, secondary_category=@sc, name=COALESCE(@name,name) WHERE shopping_item_id=@id`)
-    .run({ status:b.status??null, aq, ap, disc, total, pc, sc: pc==='食材' ? (sc||null) : null, name: b.name??null, id:it.shopping_item_id });
+      primary_category=@pc, secondary_category=@sc, name=COALESCE(@name,name),
+      quantity=COALESCE(@quantity,quantity), unit=COALESCE(@unit,unit), specification=COALESCE(@specification,specification),
+      brand=COALESCE(@brand,brand), image_url=COALESCE(@image_url,image_url), estimated_price=COALESCE(@estimated_price,estimated_price),
+      notes=COALESCE(@notes,notes) WHERE shopping_item_id=@id`)
+    .run({ status:b.status??null, aq, ap, disc, total, pc, sc: pc==='食材' ? (sc||null) : null, name: b.name??null,
+      quantity: b.quantity??null, unit: b.unit??null, specification: b.specification??null, brand: b.brand??null,
+      image_url: b.image_url??null, estimated_price: b.estimated_price??null, notes: b.notes??null, id:it.shopping_item_id });
   res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(it.shopping_item_id));
 });
 api.post('/items/:id/substitute', (req, res) => {
