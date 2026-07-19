@@ -15,9 +15,11 @@ export default function RecipeDetail() {
   const { data: r, reload } = useAsync(() => api.recipe(id), [id]);
   const [pickMeal, setPickMeal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const weekDates = currentWeekDates();
+  const [weekOff, setWeekOff] = useState(0);
+  const weekDates = currentWeekDates(weekOff);
   const [mealDate, setMealDate] = useState(() => localYmd());
   const [mealNote, setMealNote] = useState('');
+  const switchWeek = (off) => { setWeekOff(off); setMealDate(off === 0 ? localYmd() : currentWeekDates(off)[0]); };
   const [busy, setBusy] = useState(false);
   if (!r) return <><TopBar title={t('recipes')} /><div className="empty">加载中…</div></>;
 
@@ -112,7 +114,11 @@ export default function RecipeDetail() {
         <div className="sheet-mask" onClick={() => setPickMeal(false)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="bold">{t('arrangeToMenu')} · {t('mealType')}</div>
-            <div className="tiny muted" style={{ margin: '6px 0 8px' }}>{en ? 'Pick a day this week' : '选择本周哪一天'}</div>
+            <div className="row" style={{ gap: 6, margin: '8px 0' }}>
+              {[[0, t('thisWeek')], [1, t('nextWeek')]].map(([off, label]) => (
+                <button key={off} className={'chip' + (weekOff === off ? ' on' : '')} style={{ padding: '4px 14px' }} onClick={() => switchWeek(off)}>{label}</button>
+              ))}
+            </div>
             <div className="row" style={{ gap: 6, marginBottom: 12 }}>
               {weekDates.map((ds, i) => (
                 <button key={ds} className={'chip' + (mealDate === ds ? ' on' : '')} style={{ flex: 1, padding: '6px 4px', textAlign: 'center' }} onClick={() => setMealDate(ds)}>

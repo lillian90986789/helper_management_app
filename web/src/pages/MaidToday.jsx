@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, currentMaidId } from '../api.js';
 import { useAsync } from '../hooks.js';
@@ -10,7 +11,8 @@ export default function MaidToday() {
   const nav = useNavigate();
   const { showToast } = useApp();
   const { data, reload } = useAsync(() => api.dashMaid(currentMaidId()));
-  const { data: week } = useAsync(() => api.mealsWeek());
+  const [weekOff, setWeekOff] = useState(0);
+  const { data: week } = useAsync(() => api.mealsWeek(weekOff), [weekOff]);
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
   const { tasks, progress, next, meals, shopping, rest, mom } = data;
   const dateLocale = { zh: 'zh-CN', en: 'en-US', id: 'id-ID', my: 'my-MM' }[lang] || 'en-US';
@@ -149,7 +151,7 @@ export default function MaidToday() {
         {/* 本周做饭 */}
         <div className="section-title">🍳 {t('todayCook')}</div>
         <div className="card">
-          {week ? <WeeklyMenu days={week.days} lang={lang} t={t} onOpen={(id) => nav('/meal/' + id)} /> : <div className="empty tiny">加载中…</div>}
+          {week ? <WeeklyMenu key={weekOff} days={week.days} lang={lang} t={t} onOpen={(id) => nav('/meal/' + id)} weekOffset={weekOff} onWeekOffset={setWeekOff} /> : <div className="empty tiny">加载中…</div>}
         </div>
 
         {/* 下一个休息日提示（非休息日时，第 4.2 节） */}

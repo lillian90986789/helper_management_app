@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
@@ -8,7 +9,8 @@ export default function EmployerHome() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const { data, reload } = useAsync(() => api.dashEmployer());
-  const { data: week, reload: reloadWeek } = useAsync(() => api.mealsWeek());
+  const [weekOff, setWeekOff] = useState(0);
+  const { data: week, reload: reloadWeek } = useAsync(() => api.mealsWeek(weekOff), [weekOff]);
   const { data: sub } = useAsync(() => api.subCurrent().catch(() => null));
   if (!data) return <div className="content"><div className="empty">加载中…</div></div>;
   const { summary, shoppingSummary, notifications, family } = data;
@@ -71,7 +73,7 @@ export default function EmployerHome() {
         {/* 本周菜单卡片 */}
         <div className="section-title">🍽️ {t('todayMenu')}</div>
         <div className="card">
-          {week ? <WeeklyMenu days={week.days} lang={lang} t={t} onOpen={(id) => nav('/meal/' + id)} onDelete={delMeal} /> : <div className="empty tiny">加载中…</div>}
+          {week ? <WeeklyMenu key={weekOff} days={week.days} lang={lang} t={t} onOpen={(id) => nav('/meal/' + id)} onDelete={delMeal} weekOffset={weekOff} onWeekOffset={setWeekOff} /> : <div className="empty tiny">加载中…</div>}
           <button className="btn sm outline block mt12" onClick={() => nav('/e/recipes')}>{t('arrangeMenu')}</button>
         </div>
 

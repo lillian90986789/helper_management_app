@@ -258,17 +258,17 @@ export function localYmd(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 // 本周（周一~周日）7 个日期，与服务端 mondayOf()/ymd() 的"周一起始"规则保持一致
-export function currentWeekDates() {
+export function currentWeekDates(offset = 0) {
   const now = new Date();
   const day = now.getDay(); // 0=周日…6=周六
   const diff = day === 0 ? 6 : day - 1;
-  const mon = new Date(now); mon.setDate(now.getDate() - diff);
+  const mon = new Date(now); mon.setDate(now.getDate() - diff + offset * 7);
   return Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return localYmd(d); });
 }
 
 // 本周菜单：顶部 7 天日期胶囊 + 下方选中日的三餐；点击胶囊或在内容区左右滑动切换查看的那一天。
 // days: 来自 GET /meals/week 的 days 数组；onDelete 传入则显示删除按钮（雇主端），不传则只读（女佣端）。
-export function WeeklyMenu({ days, lang, t, onOpen, onDelete }) {
+export function WeeklyMenu({ days, lang, t, onOpen, onDelete, weekOffset = 0, onWeekOffset }) {
   const todayIdx = days.findIndex((d) => d.isToday);
   const [idx, setIdx] = useState(todayIdx >= 0 ? todayIdx : 0);
   const day = days[idx];
@@ -282,8 +282,17 @@ export function WeeklyMenu({ days, lang, t, onOpen, onDelete }) {
     else if (dx > 40 && idx > 0) setIdx(idx - 1);
   };
   const labels = [t('monS'), t('tueS'), t('wedS'), t('thuS'), t('friS'), t('satS'), t('sunS')];
+  const weekLabel = weekOffset === 0 ? t('thisWeek') : weekOffset === 1 ? t('nextWeek') : `${days[0].date.slice(5)} ~ ${days[6].date.slice(5)}`;
   return (
     <div>
+      {onWeekOffset && (
+        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <button className="iconbtn" onClick={() => onWeekOffset(weekOffset - 1)}>‹</button>
+          <span className="small bold" onClick={() => weekOffset !== 0 && onWeekOffset(0)} style={{ cursor: weekOffset !== 0 ? 'pointer' : 'default' }}>
+            {weekLabel}{weekOffset !== 0 && <span className="tiny muted"> ({days[0].date.slice(5)}~{days[6].date.slice(5)})</span>}</span>
+          <button className="iconbtn" onClick={() => onWeekOffset(weekOffset + 1)}>›</button>
+        </div>
+      )}
       <div className="row" style={{ gap: 4, justifyContent: 'space-between', marginBottom: 10 }}>
         {days.map((d, i) => (
           <button key={d.date} onClick={() => setIdx(i)} style={{
