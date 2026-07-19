@@ -1233,12 +1233,16 @@ api.patch('/recipes/:id', (req, res) => {
   if (!r || r.family_id !== famId(req)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   if (b.name !== undefined && !String(b.name).trim()) return res.status(400).json({ error: 'name_required' });
+  const newName = b.name !== undefined ? String(b.name).trim() : null;
+  // 改了中文名但没给新英文名 → 清空旧 name_en，否则英文界面（女佣端）一直显示旧译名；
+  // 清空后显示回退到新中文名，非中文语言读取时由翻译链路重新生成
+  const nameEn = b.name_en ?? (newName && newName !== r.name ? '' : null);
   const tx = db.transaction(() => {
     db.prepare(`UPDATE Recipe SET name=COALESCE(@name,name), name_en=COALESCE(@name_en,name_en), recipe_type=COALESCE(@recipe_type,recipe_type),
         category=COALESCE(@category,category), cover_image=COALESCE(@cover_image,cover_image), servings=COALESCE(@servings,servings),
         duration=COALESCE(@duration,duration), difficulty=COALESCE(@difficulty,difficulty), suitable_age=COALESCE(@suitable_age,suitable_age),
         notes=COALESCE(@notes,notes), video_url=CASE WHEN @has_video_url THEN @video_url ELSE video_url END WHERE recipe_id=@id`)
-      .run({ name: b.name !== undefined ? String(b.name).trim() : null, name_en: b.name_en ?? null,
+      .run({ name: newName, name_en: nameEn,
         recipe_type: b.recipe_type ? (b.recipe_type === 'baby' ? 'baby' : 'adult') : null,
         category: b.category ?? null, cover_image: b.cover_image ?? null, servings: b.servings ?? null, duration: b.duration ?? null,
         difficulty: ['easy','normal','hard'].includes(b.difficulty) ? b.difficulty : null, suitable_age: b.suitable_age ?? null,
