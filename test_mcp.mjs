@@ -16,7 +16,7 @@ const parse = (r) => JSON.parse(r.content[0].text);
 
 // 1. 工具列表
 const tools = (await client.listTools()).tools.map((t) => t.name);
-check(`listTools 返回 16 个工具 (${tools.length})`, tools.length === 16);
+check(`listTools 返回 17 个工具 (${tools.length})`, tools.length === 17);
 
 // 2. 列菜谱（种子有 3 个）
 const recipes = parse(await client.callTool({ name: 'list_recipes', arguments: {} }));
@@ -105,6 +105,13 @@ const task = parse(await client.callTool({ name: 'create_task', arguments: { tas
 check(`create_task 默认指派女佣 (${task.task_name_snapshot})`, task.task_name_snapshot === '擦阳台玻璃' && task.status === 'today_todo' && task.require_photo === 1);
 const tasks = parse(await client.callTool({ name: 'get_tasks', arguments: {} }));
 check('get_tasks 查到新任务', tasks.tasks.some((x) => x.daily_task_id === task.daily_task_id));
+
+// 8e. 区域不存在时自动创建 + update_task 修改
+const t2 = parse(await client.callTool({ name: 'create_task', arguments: { task_name: '清洁浴缸', area_name: '卫生间' } }));
+check(`create_task 自动创建区域 (${t2.area?.name})`, t2.area?.name === '卫生间');
+const t3 = parse(await client.callTool({ name: 'update_task', arguments: { daily_task_id: t2.daily_task_id, task_name: '深度清洁浴缸', priority: 'urgent', area_name: '宝宝区域' } }));
+check(`update_task 改名+优先级+新区域 (${t3.task_name_snapshot}/${t3.priority}/${t3.area?.name})`,
+  t3.task_name_snapshot === '深度清洁浴缸' && t3.priority === 'urgent' && t3.area?.name === '宝宝区域');
 
 // 9. 无效 token 被拒
 const badClient = new Client({ name: 'bad', version: '1.0.0' });

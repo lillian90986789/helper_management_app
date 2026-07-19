@@ -9,11 +9,12 @@ import { useApp } from '../App.jsx';
 export default function TaskNew() {
   const { t, lang } = useI18n();
   const nav = useNavigate();
-  const { id } = useParams();         // 有 id = 编辑模板（模板编辑始终走"重复任务"表单，不显示切换）
+  const { id, adhocId } = useParams(); // id = 编辑模板；adhocId = 编辑临时任务（走临时任务表单）
   const editing = !!id;
   const { showToast } = useApp();
   const { data: boot } = useAsync(() => api.bootstrap());
   const { data: existing } = useAsync(() => (editing ? api.template(id) : Promise.resolve(null)), [id]);
+  const { data: adhocTask } = useAsync(() => (adhocId ? api.dailyTask(adhocId) : Promise.resolve(null)), [adhocId]);
 
   const [mode, setMode] = useState('repeat');   // 'repeat' | 'adhoc'（仅新建时可切换）
 
@@ -71,6 +72,12 @@ export default function TaskNew() {
       if (firstMaid) set('assignee_id', firstMaid.user_id);
     }
   }, [boot]);
+
+  // 编辑临时任务：等数据到位后用 key 强制以回填值初始化表单
+  if (adhocId) {
+    if (!adhocTask) return <><TopBar title={t('editTask')} /><div className="empty">加载中…</div></>;
+    return <AdhocTaskForm key={adhocTask.daily_task_id} t={t} lang={lang} nav={nav} showToast={showToast} areas={areas} assignees={assignees} editTask={adhocTask} />;
+  }
 
   if (mode === 'adhoc' && !editing) {
     return <AdhocTaskForm t={t} lang={lang} nav={nav} showToast={showToast} areas={areas} assignees={assignees} onSwitchMode={() => setMode('repeat')} />;
@@ -190,19 +197,23 @@ function Toggle({ label, on, onClick }) {
 }
 
 // ===== 临时任务（一次性，图片描述） =====
-function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode }) {
+function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode, editTask }) {
   const en = lang === 'en';
-  const [f, setF] = useState({
+  const [f, setF] = useState(editTask ? {
+    task_name: editTask.task_name_snapshot || editTask.task_name || '', description: editTask.description_snapshot || editTask.description || '',
+    area_id: editTask.area_id, assignee_id: editTask.assignee_id, priority: editTask.priority || 'normal',
+    due_date: editTask.task_date || '', require_photo: !!editTask.require_photo, require_approval: !!editTask.require_approval,
+  } : {
     task_name: '', description: '', area_id: null, assignee_id: assignees[0]?.user_id || null,
     priority: 'normal', due_date: '', require_photo: true, require_approval: true,
   });
-  const [images, setImages] = useState([]);   // 参考图片 URL 列表
+  const [images, setImages] = useState(editTask ? (editTask.attachments || []).filter((a) => a.file_type === 'reference').map((a) => a.file_url) : []);   // 参考图片 URL 列表
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
-  // bootstrap 异步返回：assignees 到位后回填默认执行人（与重复任务表单同款逻辑）
+  // bootstrap 异步返回：assignees 到位后回填默认执行人（与重复任务表单同款逻辑；编辑时保留原执行人）
   useEffect(() => {
-    if (!assignees.length) return;
+    if (!assignees.length || editTask) return;
     setF((p) => (assignees.some((u) => u.user_id === p.assignee_id) ? p : { ...p, assignee_id: (assignees.find((u) => u.role === 'maid') || assignees[0]).user_id }));
   }, [assignees]);
 
@@ -219,20 +230,26 @@ function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode
     if (!f.area_id) return showToast(en ? 'Please pick an area' : '请选择区域');
     if (busy) return; setBusy(true);
     try {
-      await api.createAdhocTask({ ...f, task_date: f.due_date || undefined, reference_images: images });
-      showToast(en ? 'Published ✓' : '已发布 ✓');
-      nav('/e/tasks', { replace: true });
-    } catch { showToast(en ? 'Failed' : '发布失败'); setBusy(false); }
+      if (editTask) {
+        await api.updateAdhocTask(editTask.daily_task_id, { ...f, task_date: f.due_date || undefined, reference_images: images });
+        showToast(en ? 'Saved ✓' : '已保存 ✓');
+        nav(-1);
+      } else {
+        await api.createAdhocTask({ ...f, task_date: f.due_date || undefined, reference_images: images });
+        showToast(en ? 'Published ✓' : '已发布 ✓');
+        nav('/e/tasks', { replace: true });
+      }
+    } catch { showToast(en ? 'Failed' : (editTask ? '保存失败' : '发布失败')); setBusy(false); }
   };
 
   return (
     <>
-      <TopBar title={t('newTask')} />
+      <TopBar title={editTask ? t('editTask') : t('newTask')} />
       <div className="content">
-        <div className="seg" style={{ marginBottom: 4 }}>
+        {!editTask && <div className="seg" style={{ marginBottom: 4 }}>
           <button className="opt" onClick={onSwitchMode}>{t('repeatTaskTab')}</button>
           <button className="opt on">{t('adhocTaskTab')}</button>
-        </div>
+        </div>}
         <div className="field">
           <label>{t('taskName')} <span className="req">*</span></label>
           <input className="input" value={f.task_name} maxLength={50} placeholder={en ? 'e.g. Move the balcony box' : '例如：把阳台箱子搬开'} onChange={(e) => set('task_name', e.target.value)} />
@@ -297,7 +314,7 @@ function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode
         </div>
       </div>
       <div className="actionbar">
-        <button className="btn primary block" disabled={busy} onClick={submit}>{t('publishTask')}</button>
+        <button className="btn primary block" disabled={busy} onClick={submit}>{editTask ? t('save') : t('publishTask')}</button>
       </div>
     </>
   );

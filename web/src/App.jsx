@@ -174,6 +174,7 @@ export default function App() {
               <Route path="/m/login" element={<MaidLogin />} />
               <Route path="/task-new" element={<TaskNew />} />
               <Route path="/task-new/:id" element={<TaskNew />} />
+              <Route path="/task-edit-adhoc/:adhocId" element={<TaskNew />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/rest-days" element={<RestDaySettings />} />
               <Route path="/mom-events" element={<MomEvents />} />

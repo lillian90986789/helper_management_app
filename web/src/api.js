@@ -106,6 +106,7 @@ export const api = {
   // 任务清单模块（修改版）：每日实例
   daily: (date) => req('/daily' + (date ? '?date=' + date : '')),
   createAdhocTask: (body) => req('/daily', { method: 'POST', body }),
+  updateAdhocTask: (id, body) => req('/daily/' + id, { method: 'PATCH', body }),
   dailyTask: (id) => req('/daily/' + id),
   taskTransition: (id, body) => req(`/daily/${id}/transition`, { method: 'POST', body }),
   toggleCheck: (id) => req(`/checklist/${id}/toggle`, { method: 'POST' }),

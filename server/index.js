@@ -448,6 +448,18 @@ api.get('/bootstrap', (req, res) => {
   res.json({ family, users, areas });
 });
 
+// 新增家庭区域（如 卫生间/卧室/宝宝区域）
+api.post('/areas', (req, res) => {
+  const family = curFamily(req);
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name_required' });
+  const dup = db.prepare('SELECT * FROM Area WHERE family_id=? AND name=?').get(family.family_id, name);
+  if (dup) return res.json(dup);
+  const id = db.prepare('INSERT INTO Area (family_id,name,name_en,icon) VALUES (?,?,?,?)')
+    .run(family.family_id, name, req.body.name_en || '', req.body.icon || '📍').lastInsertRowid;
+  res.json(db.prepare('SELECT * FROM Area WHERE area_id=?').get(id));
+});
+
 // ---- 家庭成员 / 女佣账号管理 ----
 const AVATARS = { maid: ['👩🏽‍🦱','👩🏻‍🦰','👱🏽‍♀️','🧑🏽'], member: ['👩🏻','👨🏻','👵🏻','🧒🏻'], employer: ['👨🏻‍💼'] };
 api.get('/members', (req, res) => {
@@ -841,6 +853,29 @@ api.post('/daily', (req, res) => {
     db.prepare(`INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?, 'reference', ?)`).run(id, req.userId, url));
   notify(family.family_id, 'task', '新增临时任务：' + String(b.task_name).trim(), b.description || '', 'task', id, 'maid', b.assignee_id);
   res.json(dailyWith(db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(id)));
+});
+// 修改临时任务（雇主编辑：名称/说明/日期/执行人/区域/优先级等；reference_images 传入时整组替换参考图）
+api.patch('/daily/:id', (req, res) => {
+  const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
+  if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
+  const b = req.body;
+  if (b.task_name !== undefined && !String(b.task_name).trim()) return res.status(400).json({ error: 'task_name_required' });
+  const taskDate = /^\d{4}-\d{2}-\d{2}$/.test(b.task_date || '') ? b.task_date : null;
+  db.prepare(`UPDATE DailyTask SET task_name_snapshot=COALESCE(@n,task_name_snapshot), task_name_en_snapshot=COALESCE(@ne,task_name_en_snapshot),
+      description_snapshot=COALESCE(@d,description_snapshot), task_date=COALESCE(@date,task_date), weekday=COALESCE(@wd,weekday),
+      assignee_id=COALESCE(@assignee,assignee_id), area_id=COALESCE(@area,area_id), priority=COALESCE(@pri,priority),
+      estimated_duration=COALESCE(@dur,estimated_duration), require_photo=COALESCE(@rp,require_photo) WHERE daily_task_id=@id`)
+    .run({ n: b.task_name !== undefined ? String(b.task_name).trim() : null, ne: b.task_name_en ?? null, d: b.description ?? null,
+      date: taskDate, wd: taskDate ? isoWeekday(parseYmd(taskDate)) : null,
+      assignee: b.assignee_id ?? null, area: b.area_id ?? null,
+      pri: ['normal','important','urgent'].includes(b.priority) ? b.priority : null,
+      dur: b.estimated_duration ?? null, rp: b.require_photo === undefined ? null : (b.require_photo ? 1 : 0), id: t.daily_task_id });
+  if (Array.isArray(b.reference_images)) {
+    db.prepare("DELETE FROM DailyTaskAttachment WHERE daily_task_id=? AND file_type='reference'").run(t.daily_task_id);
+    b.reference_images.forEach((url) =>
+      db.prepare(`INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?, 'reference', ?)`).run(t.daily_task_id, req.userId, url));
+  }
+  res.json(dailyWith(db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(t.daily_task_id)));
 });
 api.post('/daily/:id/transition', (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);

@@ -67,6 +67,19 @@ const stepShape = z.object({
   duration: z.number().optional().describe('该步骤耗时（分钟）'),
 });
 
+// 解析任务的执行人/区域：名字模糊匹配；区域不存在则自动创建；不填走默认（女佣 + 第一个区域）
+async function resolveTask(token, assignee_name, area_name) {
+  const boot = await call(token, 'GET', '/bootstrap');
+  const match = (list, kw, field) => kw ? list.find((x) => (x[field] || '').toLowerCase().includes(kw.toLowerCase())) : null;
+  const assignee = match(boot.users, assignee_name, 'name') || boot.users.find((u) => u.role === 'maid') || boot.users[0];
+  let area = match(boot.areas, area_name, 'name');
+  if (!area && area_name) area = await call(token, 'POST', '/areas', { name: area_name });
+  if (!area) area = boot.areas[0];
+  if (!assignee) throw new Error('家庭内没有可指派的成员');
+  if (!area) throw new Error('家庭内没有区域');
+  return { assignee_id: assignee.user_id, area_id: area.area_id };
+}
+
 // 每个请求新建无状态 server（streamable HTTP stateless 模式）
 function buildServer(token) {
   const server = new McpServer({ name: 'homeflow', version: '1.0.0' });
@@ -198,19 +211,38 @@ function buildServer(token) {
       description: z.string().optional().describe('任务说明'),
       task_date: z.string().optional().describe('执行日期 YYYY-MM-DD，默认今天'),
       assignee_name: z.string().optional().describe('执行人名字（模糊匹配家庭成员），默认女佣'),
-      area_name: z.string().optional().describe('区域名字（模糊匹配），默认第一个区域'),
+      area_name: z.string().optional().describe('区域名字（模糊匹配，不存在则自动创建），默认第一个区域'),
       priority: z.enum(['normal', 'important', 'urgent']).optional(),
       estimated_duration: z.number().optional().describe('预计时长（分钟），默认 30'),
       require_photo: z.boolean().optional(),
     },
   }, async ({ assignee_name, area_name, ...rest }) => {
-    const boot = await call(token, 'GET', '/bootstrap');
-    const match = (list, kw, field) => kw ? list.find((x) => (x[field] || '').toLowerCase().includes(kw.toLowerCase())) : null;
-    const assignee = match(boot.users, assignee_name, 'name') || boot.users.find((u) => u.role === 'maid') || boot.users[0];
-    const area = match(boot.areas, area_name, 'name') || boot.areas[0];
-    if (!assignee) throw new Error('家庭内没有可指派的成员');
-    if (!area) throw new Error('家庭内没有区域');
-    return asResult(await call(token, 'POST', '/daily', { ...rest, assignee_id: assignee.user_id, area_id: area.area_id }));
+    const { assignee_id, area_id } = await resolveTask(token, assignee_name, area_name);
+    return asResult(await call(token, 'POST', '/daily', { ...rest, assignee_id, area_id }));
+  });
+
+  server.registerTool('update_task', {
+    description: '修改临时任务（名称/说明/日期/执行人/区域/优先级/时长/是否拍照）。只传要改的字段',
+    inputSchema: {
+      daily_task_id: z.number(),
+      task_name: z.string().optional(),
+      task_name_en: z.string().optional(),
+      description: z.string().optional(),
+      task_date: z.string().optional().describe('执行日期 YYYY-MM-DD'),
+      assignee_name: z.string().optional().describe('执行人名字（模糊匹配）'),
+      area_name: z.string().optional().describe('区域名字（模糊匹配，不存在则自动创建）'),
+      priority: z.enum(['normal', 'important', 'urgent']).optional(),
+      estimated_duration: z.number().optional(),
+      require_photo: z.boolean().optional(),
+    },
+  }, async ({ daily_task_id, assignee_name, area_name, ...rest }) => {
+    const body = { ...rest };
+    if (assignee_name || area_name) {
+      const r = await resolveTask(token, assignee_name, area_name);
+      if (assignee_name) body.assignee_id = r.assignee_id;
+      if (area_name) body.area_id = r.area_id;
+    }
+    return asResult(await call(token, 'PATCH', `/daily/${daily_task_id}`, body));
   });
 
   server.registerTool('get_tasks', {

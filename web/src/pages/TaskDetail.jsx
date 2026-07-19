@@ -133,7 +133,9 @@ function Actions({ task, role, t, trans, submitDone, nav }) {
   </Bar>;
   return <Bar>
     <B onClick={() => trans('canceled', '取消任务')} danger>{t('cancelTask')}</B>
-    {task.task_template_id && <B onClick={editTpl} primary>✎ {t('editTask')}</B>}
+    {task.task_template_id
+      ? <B onClick={editTpl} primary>✎ {t('editTask')}</B>
+      : <B onClick={() => nav('/task-edit-adhoc/' + task.daily_task_id)} primary>✎ {t('editTask')}</B>}
   </Bar>;
 }
 const Bar = ({ children }) => <div className="actionbar">{children}</div>;
