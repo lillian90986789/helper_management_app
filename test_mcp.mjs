@@ -16,7 +16,7 @@ const parse = (r) => JSON.parse(r.content[0].text);
 
 // 1. 工具列表
 const tools = (await client.listTools()).tools.map((t) => t.name);
-check(`listTools 返回 14 个工具 (${tools.length})`, tools.length === 14);
+check(`listTools 返回 16 个工具 (${tools.length})`, tools.length === 16);
 
 // 2. 列菜谱（种子有 3 个）
 const recipes = parse(await client.callTool({ name: 'list_recipes', arguments: {} }));
@@ -99,6 +99,12 @@ await client.callTool({ name: 'recipe_to_meal', arguments: { recipe_id: created.
 const nextWeek = parse(await client.callTool({ name: 'get_week_meals', arguments: { week_offset: 1 } }));
 const placedNext = nextWeek.days.find((d) => d.date === nextMonday)?.meals.some((m) => m.recipe?.recipe_id === created.recipe_id && m.meal_type === 'breakfast');
 check(`meal_date 排到下周一生效 (${nextMonday})`, nextWeek.start === nextMonday && !!placedNext);
+
+// 8d. 创建临时任务（默认执行人=女佣、默认区域）+ 查询可见
+const task = parse(await client.callTool({ name: 'create_task', arguments: { task_name: '擦阳台玻璃', priority: 'important', require_photo: true } }));
+check(`create_task 默认指派女佣 (${task.task_name_snapshot})`, task.task_name_snapshot === '擦阳台玻璃' && task.status === 'today_todo' && task.require_photo === 1);
+const tasks = parse(await client.callTool({ name: 'get_tasks', arguments: {} }));
+check('get_tasks 查到新任务', tasks.tasks.some((x) => x.daily_task_id === task.daily_task_id));
 
 // 9. 无效 token 被拒
 const badClient = new Client({ name: 'bad', version: '1.0.0' });

@@ -189,6 +189,35 @@ function buildServer(token) {
     },
   }, async ({ shopping_list_id, ...rest }) => asResult(await call(token, 'POST', `/shopping/${shopping_list_id}/items`, rest)));
 
+  server.registerTool('create_task', {
+    description: '创建一次性临时任务（如"擦阳台玻璃"）。执行人/区域可用名字指定；不填则默认女佣 + 第一个区域。' +
+      'priority: normal/important/urgent；require_photo 要求完成时拍照',
+    inputSchema: {
+      task_name: z.string().describe('任务名（中文）'),
+      task_name_en: z.string().optional().describe('任务英文名'),
+      description: z.string().optional().describe('任务说明'),
+      task_date: z.string().optional().describe('执行日期 YYYY-MM-DD，默认今天'),
+      assignee_name: z.string().optional().describe('执行人名字（模糊匹配家庭成员），默认女佣'),
+      area_name: z.string().optional().describe('区域名字（模糊匹配），默认第一个区域'),
+      priority: z.enum(['normal', 'important', 'urgent']).optional(),
+      estimated_duration: z.number().optional().describe('预计时长（分钟），默认 30'),
+      require_photo: z.boolean().optional(),
+    },
+  }, async ({ assignee_name, area_name, ...rest }) => {
+    const boot = await call(token, 'GET', '/bootstrap');
+    const match = (list, kw, field) => kw ? list.find((x) => (x[field] || '').toLowerCase().includes(kw.toLowerCase())) : null;
+    const assignee = match(boot.users, assignee_name, 'name') || boot.users.find((u) => u.role === 'maid') || boot.users[0];
+    const area = match(boot.areas, area_name, 'name') || boot.areas[0];
+    if (!assignee) throw new Error('家庭内没有可指派的成员');
+    if (!area) throw new Error('家庭内没有区域');
+    return asResult(await call(token, 'POST', '/daily', { ...rest, assignee_id: assignee.user_id, area_id: area.area_id }));
+  });
+
+  server.registerTool('get_tasks', {
+    description: '查看某天的任务清单（含状态、执行人）。date 不填为今天',
+    inputSchema: { date: z.string().optional().describe('日期 YYYY-MM-DD，默认今天') },
+  }, async ({ date }) => asResult(await call(token, 'GET', `/daily${date ? `?date=${date}` : ''}`)));
+
   server.registerTool('upload_image', {
     description: '上传图片到应用，返回 /uploads/... 地址，可用作菜谱封面(cover_image)或步骤配图(steps[].image_url)。' +
       '二选一：source_url（服务器抓取该 http(s) 图片，推荐）或 image_base64（小图直传）',
