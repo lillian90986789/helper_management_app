@@ -145,6 +145,7 @@ export const api = {
   meals: () => req('/meals'),
   mealsWeek: () => req('/meals/week'),
   meal: (id) => req('/meals/' + id),
+  updateMeal: (id, body) => req(`/meals/${id}`, { method: 'PATCH', body }),
   mealTransition: (id, body) => req(`/meals/${id}/transition`, { method: 'POST', body }),
   deleteMeal: (id) => req(`/meals/${id}`, { method: 'DELETE' }),
   shoppingLists: () => req('/shopping'),

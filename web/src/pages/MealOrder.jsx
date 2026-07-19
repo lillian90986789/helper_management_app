@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
@@ -11,7 +12,13 @@ export default function MealOrder() {
   const nav = useNavigate();
   const { role, showToast } = useApp();
   const { data: m, reload } = useAsync(() => api.meal(id), [id]);
+  const [editNote, setEditNote] = useState(null); // null=非编辑态
   if (!m) return <><TopBar title={t('mealOrder')} /><div className="empty">加载中…</div></>;
+
+  const saveNote = async () => {
+    await api.updateMeal(m.meal_order_id, { notes: editNote });
+    setEditNote(null); showToast('✓'); reload();
+  };
 
   const trans = async (to, msg, result_image) => { await api.mealTransition(m.meal_order_id, { to, result_image }); showToast(msg || '✓'); reload(); };
   const delMeal = async () => {
@@ -32,7 +39,19 @@ export default function MealOrder() {
             <span className="badge gray">🍽 {m.servings}{lang==='en'?' ppl':'人'}</span>
             <span className="badge gray">⏰ {fmtTime(m.start_time)}</span>
           </div>
-          {m.notes && <div className="small muted mt8">📝 {m.notes}</div>}
+          {editNote != null
+            ? <div className="mt8">
+                <input className="input" value={editNote} placeholder={t('orderNoteHint')} onChange={(e) => setEditNote(e.target.value)} />
+                <div className="row mt8" style={{ gap: 8, justifyContent: 'center' }}>
+                  <button className="btn sm outline" onClick={() => setEditNote(null)}>{t('cancel')}</button>
+                  <button className="btn sm primary" onClick={saveNote}>{t('save')}</button>
+                </div>
+              </div>
+            : <>
+                {m.notes && <div className="small mt8" style={{ color: 'var(--amber-d, #b45309)' }}>📝 {m.notes}</div>}
+                {role !== 'maid' && <button className="btn sm outline mt8" style={{ marginRight: 8 }} onClick={() => setEditNote(m.notes || '')}>
+                  {m.notes ? '✏️ ' + t('edit') : '📝 ' + t('addNote')}</button>}
+              </>}
           <VideoButton url={m.recipe.video_url} />
         </div>
 

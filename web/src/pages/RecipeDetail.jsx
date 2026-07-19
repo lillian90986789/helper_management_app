@@ -17,6 +17,7 @@ export default function RecipeDetail() {
   const [confirmDel, setConfirmDel] = useState(false);
   const weekDates = currentWeekDates();
   const [mealDate, setMealDate] = useState(() => localYmd());
+  const [mealNote, setMealNote] = useState('');
   const [busy, setBusy] = useState(false);
   if (!r) return <><TopBar title={t('recipes')} /><div className="empty">加载中…</div></>;
 
@@ -35,7 +36,7 @@ export default function RecipeDetail() {
   const toMeal = async (meal_type) => {
     if (busy) return; setBusy(true);
     try {
-      await api.recipeToMeal(r.recipe_id, { meal_type, meal_date: mealDate });
+      await api.recipeToMeal(r.recipe_id, { meal_type, meal_date: mealDate, notes: mealNote.trim() || undefined });
       setPickMeal(false);
       showToast(en ? 'Added to menu ✓' : '已安排到菜单 ✓');
       nav('/e/home');
@@ -118,6 +119,10 @@ export default function RecipeDetail() {
                   {[t('monS'),t('tueS'),t('wedS'),t('thuS'),t('friS'),t('satS'),t('sunS')][i]}{+ds.slice(8)}
                 </button>
               ))}
+            </div>
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label>📝 {t('orderNote')} <span className="tiny muted">（{t('orderNoteHint')}）</span></label>
+              <input className="input" value={mealNote} placeholder={en ? 'Optional' : '可不填'} onChange={(e) => setMealNote(e.target.value)} />
             </div>
             <div className="row" style={{ gap: 8 }}>
               {[['breakfast','🌅'],['lunch','🍚'],['dinner','🌙']].map(([mt, ic]) => (

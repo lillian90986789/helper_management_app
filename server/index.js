@@ -1332,6 +1332,13 @@ api.get('/meals/:id', async (req, res) => {
   const mm = mealWith(m); await localizeRecipes(req, mm.recipe);
   res.json(mm);
 });
+// 修改菜谱订单备注（雇主给女佣的当次注意事项，与菜谱固定说明分离）
+api.patch('/meals/:id', (req, res) => {
+  const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
+  if (!owns(req, m)) return res.status(404).json({ error: 'not found' });
+  if (req.body.notes !== undefined) db.prepare('UPDATE MealOrder SET notes=? WHERE meal_order_id=?').run(String(req.body.notes || '').trim(), m.meal_order_id);
+  res.json(mealWith(db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(m.meal_order_id)));
+});
 // 雇主删除今日菜单中的菜品
 api.delete('/meals/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
