@@ -93,6 +93,13 @@ const week2 = parse(await client.callTool({ name: 'get_week_meals', arguments: {
 const placed = week2.days.find((d) => d.date === otherDay)?.meals.some((m) => m.recipe?.recipe_id === created.recipe_id && m.meal_type === 'lunch');
 check(`meal_date 指定本周其他日期生效 (${otherDay})`, !!placed);
 
+// 8c. 排到下周 + week_offset=1 可见
+const nextMonday = (() => { const d = new Date(week.start); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })();
+await client.callTool({ name: 'recipe_to_meal', arguments: { recipe_id: created.recipe_id, meal_type: 'breakfast', meal_date: nextMonday } });
+const nextWeek = parse(await client.callTool({ name: 'get_week_meals', arguments: { week_offset: 1 } }));
+const placedNext = nextWeek.days.find((d) => d.date === nextMonday)?.meals.some((m) => m.recipe?.recipe_id === created.recipe_id && m.meal_type === 'breakfast');
+check(`meal_date 排到下周一生效 (${nextMonday})`, nextWeek.start === nextMonday && !!placedNext);
+
 // 9. 无效 token 被拒
 const badClient = new Client({ name: 'bad', version: '1.0.0' });
 let rejected = false;

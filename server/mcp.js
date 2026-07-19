@@ -134,11 +134,11 @@ function buildServer(token) {
   }, async ({ recipe_id }) => asResult(await call(token, 'POST', `/recipes/${recipe_id}/to-shopping`, {})));
 
   server.registerTool('recipe_to_meal', {
-    description: '把菜谱安排到菜单。meal_type: breakfast/lunch/dinner，默认 lunch；meal_date 可选本周（周一~周日）任意一天，不填或超出本周则为今天',
+    description: '把菜谱安排到菜单。meal_type: breakfast/lunch/dinner，默认 lunch；meal_date 任意日期（可提前排下周菜单），不填为今天',
     inputSchema: {
       recipe_id: z.number(),
       meal_type: z.enum(['breakfast', 'lunch', 'dinner']).optional(),
-      meal_date: z.string().optional().describe('用餐日期 YYYY-MM-DD，仅限本周（周一~周日），默认今天'),
+      meal_date: z.string().optional().describe('用餐日期 YYYY-MM-DD，任意日期（如下周），默认今天'),
       servings: z.number().optional(),
       notes: z.string().optional(),
     },
@@ -150,9 +150,9 @@ function buildServer(token) {
   }, async () => asResult(await call(token, 'GET', '/meals')));
 
   server.registerTool('get_week_meals', {
-    description: '查看本周菜单（周一~周日每天的早/午/晚菜品及状态）',
-    inputSchema: {},
-  }, async () => asResult(await call(token, 'GET', '/meals/week')));
+    description: '查看某一周的菜单（周一~周日每天的早/午/晚菜品及状态）。week_offset: 0=本周（默认），1=下周，-1=上周',
+    inputSchema: { week_offset: z.number().optional().describe('周偏移量，0=本周，1=下周，-1=上周') },
+  }, async ({ week_offset }) => asResult(await call(token, 'GET', `/meals/week${week_offset ? `?offset=${week_offset}` : ''}`)));
 
   server.registerTool('list_shopping_lists', {
     description: '列出全部采购清单（含状态、小票信息、金额核对结果）',

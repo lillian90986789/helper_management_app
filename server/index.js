@@ -1296,9 +1296,8 @@ api.post('/recipes/:id/to-meal', (req, res) => {
   if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const mt = ['breakfast','lunch','dinner'].includes(b.meal_type) ? b.meal_type : 'lunch';
-  const mon = mondayOf(new Date());
-  const weekDates = Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return ymd(d); });
-  const mealDate = weekDates.includes(b.meal_date) ? b.meal_date : todayYmd();
+  // 任意有效日期均可（支持提前排下周菜单）；格式不合法则落到今天
+  const mealDate = /^\d{4}-\d{2}-\d{2}$/.test(b.meal_date || '') ? b.meal_date : todayYmd();
   const mid = db.prepare(`INSERT INTO MealOrder (family_id,recipe_id,meal_date,meal_type,servings,assignee_id,status,notes) VALUES (?,?,?,?,?,?, 'to_receive', ?)`)
     .run(family.family_id, r.recipe_id, mealDate, mt, b.servings || r.servings || 2, defaultHelperId(family.family_id), b.notes || '').lastInsertRowid;
   const dayLabel = mealDate === todayYmd() ? '今日' : (mealDate.slice(5) + ' ');
@@ -1315,6 +1314,8 @@ api.get('/meals', async (req, res) => { const ms = db.prepare('SELECT * FROM Mea
 // 本周菜单：周一~周日全部菜品，按日期分组（提前排菜 + 周菜单展示）
 api.get('/meals/week', async (req, res) => {
   const mon = mondayOf(new Date());
+  const off = parseInt(req.query.offset, 10) || 0; // 0=本周，1=下周，-1=上周
+  mon.setDate(mon.getDate() + off * 7);
   const today = todayYmd();
   const days = [];
   const allRecipes = [];
