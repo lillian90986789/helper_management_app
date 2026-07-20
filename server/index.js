@@ -1184,7 +1184,7 @@ api.get('/dashboard/employer', (req, res) => {
   const shoppingSummary = {
     to_buy: items.filter(i=>i.status==='to_buy').length,
     sub_pending: items.filter(i=>i.status==='sub_requested').length,
-    est_total: items.reduce((s,i)=> s + (i.estimated_price||0)*(i.quantity||1), 0),
+    est_total: items.filter(i=>i.status!=='pending_review').reduce((s,i)=> s + (i.estimated_price||0)*(i.quantity||1), 0),
     actual_total: items.reduce((s,i)=> s + (i.actual_total||0), 0),
   };
   const notifications = db.prepare("SELECT * FROM Notification WHERE family_id=? AND to_role IN ('employer') ORDER BY notification_id DESC LIMIT 6").all(famId(req));
@@ -1513,7 +1513,7 @@ function matchStatus(helperTotal, receiptTotal) {
 function listWith(l) {
   l.items = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(l.shopping_list_id);
   l.assignee = l.assignee_id ? db.prepare('SELECT name,avatar FROM User WHERE user_id=?').get(l.assignee_id) : null;
-  l.est_total = l.items.reduce((s,i)=> s + (i.estimated_price||0)*(i.quantity||1), 0);
+  l.est_total = l.items.filter(i=>i.status!=='pending_review').reduce((s,i)=> s + (i.estimated_price||0)*(i.quantity||1), 0);
   // 女佣录入总金额 = 商品小计 + 消费税 + 其他费用（第 6.3 节公式 + GST）
   const rate = gstRate(l.family_id);
   const subtotal = +l.items.reduce((s,i)=> s + (i.actual_total||0), 0).toFixed(2);
@@ -1592,15 +1592,35 @@ api.post('/shopping/:id/items', (req, res) => {
   if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const pc = b.primary_category || '食材';
+  // 女佣添加的商品需雇主确认后才进入待购（pending_review → to_buy）
+  const isMaid = curUserRole(req) === 'maid';
   const r = db.prepare(`INSERT INTO ShoppingItem
     (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,brand,specification,estimated_price,budget_limit,allow_substitute,urgency,notes,status)
-    VALUES (@shopping_list_id,@name,@name_en,@category,@pc,@sc,@image_url,@quantity,@unit,@brand,@specification,@estimated_price,@budget_limit,@allow_substitute,@urgency,@notes,'to_buy')`)
+    VALUES (@shopping_list_id,@name,@name_en,@category,@pc,@sc,@image_url,@quantity,@unit,@brand,@specification,@estimated_price,@budget_limit,@allow_substitute,@urgency,@notes,@status)`)
     .run({ shopping_list_id: l.shopping_list_id, name: b.name || '', name_en: b.name_en || '', category: b.category || pc,
       pc, sc: pc === '食材' ? (b.secondary_category || '其他食材') : null,
       image_url: b.image_url || '🛒', quantity: b.quantity || 1, unit: b.unit || '件', brand: b.brand || '',
       specification: b.specification || '', estimated_price: b.estimated_price || 0, budget_limit: b.budget_limit || 0,
-      allow_substitute: b.allow_substitute ? 1 : 0, urgency: b.urgency || 'normal', notes: b.notes || '' });
+      allow_substitute: b.allow_substitute ? 1 : 0, urgency: b.urgency || 'normal', notes: b.notes || '',
+      status: isMaid ? 'pending_review' : 'to_buy' });
+  if (isMaid) notify(l.family_id, 'shopping', '女佣添加了商品待确认：' + (b.name || ''), `清单「${l.title}」`, 'shopping', l.shopping_list_id, 'employer');
   res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(r.lastInsertRowid));
+});
+// 雇主确认/拒绝女佣添加的商品：同意 → 进入待购；拒绝 → 删除
+api.post('/items/:id/review', (req, res) => {
+  if (!ownsItem(req, req.params.id)) return res.status(404).json({ error: 'not found' });
+  if (curUserRole(req) === 'maid') return res.status(403).json({ error: 'employer_only' });
+  const it = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(req.params.id);
+  if (it.status !== 'pending_review') return res.status(400).json({ error: 'not_pending' });
+  const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(it.shopping_list_id);
+  if (req.body.approve) {
+    db.prepare("UPDATE ShoppingItem SET status='to_buy' WHERE shopping_item_id=?").run(it.shopping_item_id);
+    notify(l.family_id, 'shopping', '雇主已同意购买：' + it.name, `清单「${l.title}」`, 'shopping', l.shopping_list_id, 'maid');
+    return res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(it.shopping_item_id));
+  }
+  db.prepare('DELETE FROM ShoppingItem WHERE shopping_item_id=?').run(it.shopping_item_id);
+  notify(l.family_id, 'shopping', '雇主未同意购买：' + it.name, `清单「${l.title}」`, 'shopping', l.shopping_list_id, 'maid');
+  res.json({ ok: true, rejected: true });
 });
 api.delete('/items/:id', (req, res) => {
   if (!ownsItem(req, req.params.id)) return res.status(404).json({ error: 'not found' });

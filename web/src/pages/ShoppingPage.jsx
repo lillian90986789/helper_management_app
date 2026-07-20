@@ -6,7 +6,7 @@ import { useI18n, pick } from '../i18n.jsx';
 import { TopBar, StatusBadge, fmtTime, Empty, isImgAvatar, ZoomImg, compressAndUploadImage } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
-const GROUPS = ['to_buy', 'bought', 'out_of_stock', 'sub_requested'];
+const GROUPS = ['pending_review', 'to_buy', 'bought', 'out_of_stock', 'sub_requested'];
 
 export default function ShoppingPage({ role, detail }) {
   if (detail) return <ShoppingDetail />;
@@ -77,7 +77,7 @@ function ShoppingDetail() {
       <TopBar title={l.title} right={role === 'employer' ? <div className="row" style={{ gap: 6 }}>
         <button className="iconbtn" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/add-item')}>＋</button>
         <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => setConfirmDelList(true)} title={t('deleteList')}>🗑</button>
-      </div> : undefined} />
+      </div> : <button className="iconbtn" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/add-item')}>＋</button>} />
       <div className="content">
         <div className="card">
           <div className="spread"><StatusBadge status={l.status} /><span className="small muted">📍 {l.store_name}</span></div>
@@ -114,6 +114,10 @@ function ShoppingDetail() {
                       <button className="btn sm amber" onClick={() => nav('/substitute/' + it.shopping_item_id)}>{t('applySub')}</button>}
                     {role === 'employer' && it.status === 'sub_requested' &&
                       <button className="btn sm amber" onClick={() => nav('/substitute/' + it.shopping_item_id)}>{t('subReview')}</button>}
+                    {role === 'employer' && it.status === 'pending_review' && <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <button className="btn sm primary" onClick={async () => { await api.reviewItem(it.shopping_item_id, true); showToast('✓'); reload(); }}>✓ {t('approve')}</button>
+                      <button className="btn sm outline" onClick={async () => { await api.reviewItem(it.shopping_item_id, false); showToast(t('reject') + ' ✓'); reload(); }}>{t('reject')}</button>
+                    </div>}
                     {role === 'employer' && it.status === 'to_buy' && <>
                       <button className="iconbtn" onClick={() => edit?.id === it.shopping_item_id ? setEdit(null) : openEdit(it)}>✏️</button>
                       <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => del(it)}>✕</button>
@@ -148,9 +152,7 @@ function ShoppingDetail() {
         {l.items.length === 0 && (
           <Empty icon="🛒" text={role === 'employer' ? t('addFirstItem') : t('noItems')} />
         )}
-        {role === 'employer' && (
-          <button className="btn outline block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/add-item')}>＋ {t('addItem')}</button>
-        )}
+        <button className="btn outline block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/add-item')}>＋ {t('addItem')}</button>
 
         {/* 金额核对 / 雇主审核对比（第 8 / 13 节） */}
         {(l.receipt_total != null || l.status === 'pending_confirm' || l.status === 'confirmed') && (

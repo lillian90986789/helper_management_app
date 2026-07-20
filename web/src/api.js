@@ -159,6 +159,7 @@ export const api = {
   shoppingTransition: (id, body) => req(`/shopping/${id}/transition`, { method: 'POST', body }),
   patchItem: (id, body) => req(`/items/${id}`, { method: 'PATCH', body }),
   reviewSub: (id, approve) => req(`/items/${id}/substitute/review`, { method: 'POST', body: { approve } }),
+  reviewItem: (id, approve) => req(`/items/${id}/review`, { method: 'POST', body: { approve } }),
   // 采购模块：分类 + 月度账目 + 小票识别
   categories: () => req('/categories'),
   monthlyExpense: (year, mon) => req(`/expense/monthly?year=${year}&month=${mon}`),
