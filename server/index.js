@@ -1436,21 +1436,26 @@ const RECEIPT_SCHEMA = {
     store_name: { type: 'string' }, purchase_date: { type: 'string' }, currency: { type: 'string' },
     subtotal: { type: 'number' }, tax: { type: 'number' }, total: { type: 'number' },
     items: { type: 'array', items: { type: 'object', additionalProperties: false,
-      properties: { name: { type: 'string' }, quantity: { type: 'number' }, unit_price: { type: 'number' }, line_total: { type: 'number' } },
-      required: ['name', 'quantity', 'unit_price', 'line_total'] } },
+      properties: { name: { type: 'string' }, quantity: { type: 'number' }, unit_price: { type: 'number' }, line_total: { type: 'number' },
+        matched_shopping_item_id: { type: ['integer', 'null'] } },
+      required: ['name', 'quantity', 'unit_price', 'line_total', 'matched_shopping_item_id'] } },
   },
   required: ['store_name', 'purchase_date', 'currency', 'subtotal', 'tax', 'total', 'items'],
 };
 // 调用 Claude 视觉识别小票（原始 HTTPS，避免额外依赖）；无 API Key 时返回 null 走兜底
-async function claudeReceiptOCR(base64, mediaType) {
+// listItems 传入时同时做小票行与采购清单的跨语言匹配（小票多为英文缩写，清单可能是中文）
+async function claudeReceiptOCR(base64, mediaType, listItems) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
+  const listText = (listItems || []).length
+    ? `\n\n下面是本次采购清单的商品（JSON）。请把小票上的每一行与清单商品匹配：能对应的填该商品的 shopping_item_id 到 matched_shopping_item_id；小票行在清单里找不到对应商品的填 null。注意小票名称常是英文缩写，清单名称可能是中文，请按语义匹配（如 "COCA COLA 1.5L" ↔ "可乐"）。\n${JSON.stringify(listItems)}`
+    : '';
   const body = {
     model: 'claude-opus-4-8', max_tokens: 2048,
     output_config: { format: { type: 'json_schema', schema: RECEIPT_SCHEMA }, effort: 'low' },
     messages: [{ role: 'user', content: [
       { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 } },
-      { type: 'text', text: '这是一张超市购物小票。请识别：商店名称、购买日期(YYYY-MM-DD)、货币、税前小计(subtotal)、消费税(tax，如 GST/VAT)、含税总金额(total)，以及每个商品的名称、数量、单价、小计。金额一律用数字，不带货币符号。日期无法识别则留空字符串。' },
+      { type: 'text', text: '这是一张超市购物小票。请识别：商店名称、购买日期(YYYY-MM-DD)、货币、税前小计(subtotal)、消费税(tax，如 GST/VAT)、含税总金额(total)，以及每个商品的名称、数量、单价、小计。金额一律用数字，不带货币符号。日期无法识别则留空字符串。' + listText },
     ] }],
   };
   const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1478,19 +1483,28 @@ api.post('/shopping/:id/receipt-scan', async (req, res) => {
   try { fs.writeFileSync(join(uploadsDir, fname), Buffer.from(base64, 'base64')); } catch (e) { /* 忽略写盘失败 */ }
   const fileUrl = `/uploads/${fname}`;
 
-  // 识别：优先 Claude，失败/无 Key 兜底（按当前录入的商品小计 + 9% GST 生成，便于演示）
-  let ocr = null;
-  try { ocr = await claudeReceiptOCR(base64, mediaType); } catch (e) { console.error('OCR error', e); }
+  // 识别：优先 Claude（带清单做逐项匹配），失败/无 Key 兜底（按当前录入的商品小计生成，便于演示）
   const view = listWith(l);
+  const listForMatch = view.items.filter((i) => i.status !== 'pending_review')
+    .map((i) => ({ shopping_item_id: i.shopping_item_id, name: i.name, name_en: i.name_en || undefined, quantity: i.quantity, unit: i.unit }));
+  let ocr = null;
+  try { ocr = await claudeReceiptOCR(base64, mediaType, listForMatch); } catch (e) { console.error('OCR error', e); }
   if (!ocr) {
     const sub = view.subtotal || view.items.reduce((s, i) => s + (i.estimated_price || 0) * (i.quantity || 1), 0);
     const tax = +(sub * gstRate(famId(req))).toFixed(2);
     ocr = { source: 'mock', store_name: l.store_name || 'FairPrice', purchase_date: todayYmd(), currency: 'SGD',
       subtotal: +sub.toFixed(2), tax, total: +(sub + tax).toFixed(2), items: [] };
   }
-  // 落库：小票图片 + 识别总额 + 商店/日期
-  db.prepare(`UPDATE ShoppingList SET receipt_image=?, receipt_total=?, store_name=COALESCE(NULLIF(?,''),store_name), purchase_date=COALESCE(NULLIF(?,''),purchase_date), amount_match_status=? WHERE shopping_list_id=?`)
-    .run(fileUrl, ocr.total, ocr.store_name || '', ocr.purchase_date || '', matchStatus(view.helper_total, ocr.total), l.shopping_list_id);
+  // 逐项比对：小票行无匹配 = 清单外多买；清单商品未出现在小票 = 小票未见
+  const matchedIds = new Set((ocr.items || []).map((i) => i.matched_shopping_item_id).filter(Boolean));
+  ocr.missing_items = ocr.items?.length
+    ? listForMatch.filter((i) => !matchedIds.has(i.shopping_item_id)).map((i) => ({ shopping_item_id: i.shopping_item_id, name: i.name }))
+    : [];
+  ocr.extra_count = (ocr.items || []).filter((i) => !i.matched_shopping_item_id).length;
+  // 落库：小票图片 + 识别总额 + 商店/日期 + 逐项明细（含匹配结果，供雇主端展示）
+  const receiptItemsJson = ocr.items?.length ? JSON.stringify({ items: ocr.items, missing_items: ocr.missing_items }) : null;
+  db.prepare(`UPDATE ShoppingList SET receipt_image=?, receipt_total=?, store_name=COALESCE(NULLIF(?,''),store_name), purchase_date=COALESCE(NULLIF(?,''),purchase_date), amount_match_status=?, receipt_items=COALESCE(?,receipt_items) WHERE shopping_list_id=?`)
+    .run(fileUrl, ocr.total, ocr.store_name || '', ocr.purchase_date || '', matchStatus(view.helper_total, ocr.total), receiptItemsJson, l.shopping_list_id);
   res.json({ ...ocr, file_url: fileUrl, gst_rate: gstRate(famId(req)) });
 });
 
@@ -1513,6 +1527,7 @@ function matchStatus(helperTotal, receiptTotal) {
 function listWith(l) {
   l.items = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(l.shopping_list_id);
   l.assignee = l.assignee_id ? db.prepare('SELECT name,avatar FROM User WHERE user_id=?').get(l.assignee_id) : null;
+  try { l.receipt_items = l.receipt_items ? JSON.parse(l.receipt_items) : null; } catch { l.receipt_items = null; }
   l.est_total = l.items.filter(i=>i.status!=='pending_review').reduce((s,i)=> s + (i.estimated_price||0)*(i.quantity||1), 0);
   // 女佣录入总金额 = 商品小计 + 消费税 + 其他费用（第 6.3 节公式 + GST）
   const rate = gstRate(l.family_id);

@@ -158,6 +158,33 @@ export function VideoButton({ url }) {
   );
 }
 
+// 小票逐项识别 + 与采购清单比对：匹配的打勾，清单外多买的标红，清单有但小票未见的提示
+export function ReceiptCompare({ data, listItems, lang, t }) {
+  if (!data?.items?.length) return null;
+  const nameOf = (id) => { const it = (listItems || []).find((x) => x.shopping_item_id === id); return it ? pick(lang, it.name, it.name_en) : null; };
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div className="bold small" style={{ marginBottom: 6 }}>🧾 {t('receiptItemsTitle')}</div>
+      {data.items.map((it, i) => (
+        <div key={i} className="spread" style={{ padding: '3px 0', gap: 8 }}>
+          <span className="small" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {it.matched_shopping_item_id
+              ? <span style={{ color: 'var(--teal)' }}>✓</span>
+              : <span className="badge red tiny">{t('extraItem')}</span>} {it.name}
+            {it.matched_shopping_item_id && nameOf(it.matched_shopping_item_id) && <span className="tiny muted"> ↔ {nameOf(it.matched_shopping_item_id)}</span>}
+          </span>
+          <span className="small" style={{ flex: 'none' }}>{it.quantity > 1 ? '×' + it.quantity + ' ' : ''}S${(+it.line_total || 0).toFixed(2)}</span>
+        </div>
+      ))}
+      {data.missing_items?.length > 0 && (
+        <div className="tiny mt8" style={{ color: 'var(--amber-d, #b45309)' }}>
+          ⚠️ {t('missingOnReceipt')}: {data.missing_items.map((m) => m.name).join('、')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 缩略图 + 点击应用内放大，自带状态，直接替换原来 window.open 的 <img>
 export function ZoomImg({ src, className, style }) {
   const [open, setOpen] = useState(false);

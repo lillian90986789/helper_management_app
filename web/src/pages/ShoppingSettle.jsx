@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, CategoryPicker, catLabel } from '../ui.jsx';
+import { TopBar, CategoryPicker, catLabel, ReceiptCompare } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 const TOL = 0.05; // 允许误差 ±0.05（第 8.3 节）
@@ -171,6 +171,7 @@ export default function ShoppingSettle() {
                 </div>
                 <button className="btn sm outline" onClick={() => { setReceipt(''); setReceiptTotal(''); setScanInfo(null); }}>{t('cancel')}</button>
               </div>
+              <ReceiptCompare data={scanInfo} listItems={list?.items} lang={lang} t={t} />
             </div>
           : <div className="card">
               <label className="uploadbox" style={{ cursor: 'pointer', display: 'block' }}>

@@ -56,6 +56,7 @@ const dict = {
     videoUrl: '视频教程链接', watchVideo: '观看视频教程', close: '关闭',
     orderNote: '本次注意事项', orderNoteHint: '仅本次做菜生效，可不填。例如：宝宝有点咳嗽，今天不放糖', addNote: '添加备注',
     deleteList: '删除清单', deleteListConfirm: '删除后清单及其中所有商品将无法恢复', itemPhoto: '参考图',
+    receiptItemsTitle: '小票明细比对', extraItem: '清单外', missingOnReceipt: '清单中有但小票未见',
     confirmRead: '确认已阅读',
     // meal order
     mealOrder: '菜谱订单', mealDate: '用餐日期', mealType: '餐次', diners: '用餐人数', missingIng: '缺少食材', resultPhoto: '完成照片', maidNote: '女佣备注',
@@ -148,6 +149,7 @@ const dict = {
     videoUrl: 'Video tutorial link', watchVideo: 'Watch video tutorial', close: 'Close',
     orderNote: 'Notes for this time', orderNoteHint: 'Only for this cooking, optional. e.g. Baby has a cough, no sugar today', addNote: 'Add note',
     deleteList: 'Delete list', deleteListConfirm: 'The list and all its items will be permanently deleted', itemPhoto: 'Reference photo',
+    receiptItemsTitle: 'Receipt items vs list', extraItem: 'Not on list', missingOnReceipt: 'On list but not on receipt',
     confirmRead: 'Mark as Read',
     mealOrder: 'Meal Order', mealDate: 'Date', mealType: 'Meal', diners: 'Diners', missingIng: 'Missing', resultPhoto: 'Result Photo', maidNote: 'Helper Note',
     received: 'Received', markMissing: 'Mark Missing', uploadResult: 'Upload Photo', cookDone: 'Done Cooking',

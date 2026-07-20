@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, fmtTime, Empty, isImgAvatar, ZoomImg, compressAndUploadImage } from '../ui.jsx';
+import { TopBar, StatusBadge, fmtTime, Empty, isImgAvatar, ZoomImg, compressAndUploadImage, ReceiptCompare } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 const GROUPS = ['pending_review', 'to_buy', 'bought', 'out_of_stock', 'sub_requested'];
@@ -200,6 +200,7 @@ function ShoppingDetail() {
             {isImgAvatar(l.receipt_image)
               ? <ZoomImg src={l.receipt_image} style={{ maxWidth: '100%', maxHeight: 340, borderRadius: 10, display: 'block' }} />
               : <div className="thumb lg">{l.receipt_image}</div>}
+            <ReceiptCompare data={l.receipt_items} listItems={l.items} lang={lang} t={t} />
             {l.payment_method && <div className="small muted mt8">{l.payment_method}</div>}
           </div>
         </>}
