@@ -1179,7 +1179,7 @@ api.get('/dashboard/employer', (req, res) => {
   const summary = { total: tasks.length, done: cnt('done'), in_progress: cnt('in_progress'),
     incomplete: cnt('incomplete'), pending_review: cnt('pending_review'), todo: cnt('today_todo') };
   const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=? AND mo.meal_date=?').all(famId(req), date);
-  const shopping = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC LIMIT 1').get(famId(req)) || null;
+  const shopping = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL ORDER BY shopping_list_id DESC LIMIT 1').get(famId(req)) || null;
   const items = shopping ? db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(shopping.shopping_list_id) : [];
   const shoppingSummary = {
     to_buy: items.filter(i=>i.status==='to_buy').length,
@@ -1202,7 +1202,7 @@ api.get('/dashboard/maid', async (req, res) => {
   const next = tasks.find(t=>['today_todo','in_progress','returned'].includes(t.status));
   const meals = db.prepare('SELECT mo.*, r.name recipe_name, r.name_en recipe_name_en, r.cover_image, r.recipe_type FROM MealOrder mo JOIN Recipe r ON r.recipe_id=mo.recipe_id WHERE mo.family_id=? AND mo.meal_date=?').all(famId(req), date);
   // 「今日采购」只显示进行中的采购单：已完成（雇主已确认 confirmed）或已取消（canceled）不再显示
-  const shopping = db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND status NOT IN ('confirmed','canceled') ORDER BY shopping_list_id DESC LIMIT 1").get(famId(req)) || null;
+  const shopping = db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL AND status NOT IN ('confirmed','canceled') ORDER BY shopping_list_id DESC LIMIT 1").get(famId(req)) || null;
   const items = shopping ? db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(shopping.shopping_list_id) : [];
   // 本月休息日 + 下一个休息日（第 4 节）
   const now = new Date();
@@ -1547,22 +1547,45 @@ function listWith(l) {
   l.category_breakdown = Object.entries(catMap).map(([k,v]) => ({ category: k, amount: +v.toFixed(2) }));
   return l;
 }
-api.get('/shopping', async (req, res) => { const ls = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? ORDER BY shopping_list_id DESC').all(famId(req)).map(listWith); await localizeLists(req, ls); res.json(ls); });
+// 回收站里超过 30 天的清单彻底清除
+function purgeOldTrash(familyId) {
+  const old = db.prepare("SELECT shopping_list_id FROM ShoppingList WHERE family_id=? AND deleted_at IS NOT NULL AND deleted_at < datetime('now','-30 days')").all(familyId);
+  if (!old.length) return;
+  db.transaction(() => old.forEach(({ shopping_list_id }) => {
+    db.prepare('DELETE FROM ShoppingItem WHERE shopping_list_id=?').run(shopping_list_id);
+    db.prepare('DELETE FROM ShoppingList WHERE shopping_list_id=?').run(shopping_list_id);
+  }))();
+}
+api.get('/shopping', async (req, res) => {
+  purgeOldTrash(famId(req));
+  const ls = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL ORDER BY shopping_list_id DESC').all(famId(req)).map(listWith);
+  await localizeLists(req, ls); res.json(ls);
+});
+// 回收站：已删除的清单（30 天内），需在 /shopping/:id 之前注册以免被吞
+api.get('/shopping/trash', (req, res) => {
+  purgeOldTrash(famId(req));
+  const ls = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC').all(famId(req)).map(listWith);
+  res.json(ls);
+});
 api.get('/shopping/:id', async (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
-  if (!owns(req, l)) return res.status(404).json({ error:'not found' });
+  if (!owns(req, l) || l.deleted_at) return res.status(404).json({ error:'not found' });
   const ll = listWith(l); await localizeLists(req, ll);
   res.json(ll);
 });
-// 雇主删除整个采购清单（连同其下所有商品）
+// 雇主删除采购清单：软删除进回收站，30 天内可恢复
 api.delete('/shopping/:id', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
   if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
-  db.transaction(() => {
-    db.prepare('DELETE FROM ShoppingItem WHERE shopping_list_id=?').run(l.shopping_list_id);
-    db.prepare('DELETE FROM ShoppingList WHERE shopping_list_id=?').run(l.shopping_list_id);
-  })();
-  res.json({ ok: true });
+  db.prepare("UPDATE ShoppingList SET deleted_at=datetime('now') WHERE shopping_list_id=?").run(l.shopping_list_id);
+  res.json({ ok: true, soft_deleted: true });
+});
+// 从回收站恢复
+api.post('/shopping/:id/restore', (req, res) => {
+  const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);
+  if (!owns(req, l) || !l.deleted_at) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE ShoppingList SET deleted_at=NULL WHERE shopping_list_id=?').run(l.shopping_list_id);
+  res.json(listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(l.shopping_list_id)));
 });
 // 雇主创建采购清单
 api.post('/shopping', (req, res) => {
@@ -1724,7 +1747,7 @@ api.get('/expense/monthly', (req, res) => {
   const year = req.query.year ? +req.query.year : now.getFullYear();
   const month = req.query.month ? +req.query.month : now.getMonth() + 1;
   const ym = `${year}-${pad(month)}`;
-  const all = db.prepare('SELECT * FROM ShoppingList WHERE family_id=?').all(famId(req));
+  const all = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL').all(famId(req));
   const inMonth = all.filter((l) => listMonth(l) === ym);
   const confirmed = inMonth.filter((l) => ['confirmed', 'reimbursed'].includes(l.status));
   const pending = inMonth.filter((l) => l.status === 'pending_confirm');

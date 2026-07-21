@@ -16,14 +16,36 @@ export default function ShoppingPage({ role, detail }) {
 function ShoppingOverview({ role }) {
   const { t } = useI18n();
   const nav = useNavigate();
-  const { data: lists } = useAsync(() => api.shoppingLists());
+  const { data: lists, reload } = useAsync(() => api.shoppingLists());
+  const [trash, setTrash] = useState(null); // null=未展开
+  const { showToast } = useApp();
+  const toggleTrash = async () => setTrash(trash ? null : await api.trashLists());
+  const restore = async (id) => {
+    await api.restoreList(id); showToast(t('restoreList') + ' ✓');
+    setTrash(await api.trashLists()); reload();
+  };
   return (
     <>
       <div className="topbar"><h1>{t('shopping')}</h1>
+        {role === 'employer' && <button className="iconbtn" onClick={toggleTrash} title={t('trashBin')} style={trash ? { color: 'var(--teal)' } : undefined}>🗑</button>}
         {role === 'employer' && <button className="iconbtn" onClick={() => nav('/expense')} title={t('monthlyExpense')}>📊</button>}
         {role === 'employer' && <button className="iconbtn" onClick={() => nav('/shopping-new')}>＋</button>}
       </div>
       <div className="content">
+        {trash && (
+          <div className="card" style={{ background: 'var(--bg)' }}>
+            <div className="bold small" style={{ marginBottom: 6 }}>🗑 {t('trashBin')}</div>
+            {trash.length === 0 ? <div className="tiny muted">{t('trashEmpty')}</div> : trash.map((l) => (
+              <div key={l.shopping_list_id} className="spread" style={{ padding: '6px 0' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="small bold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</div>
+                  <div className="tiny muted">{l.items.length} {t('items')} · {t('deletedOn')} {(l.deleted_at || '').slice(0, 10)}</div>
+                </div>
+                <button className="btn sm outline" style={{ flex: 'none' }} onClick={() => restore(l.shopping_list_id)}>↩ {t('restoreList')}</button>
+              </div>
+            ))}
+          </div>
+        )}
         {!lists ? <Empty text="加载中…" /> : lists.map((l) => (
           <div key={l.shopping_list_id} className="card tap" onClick={() => nav('/shopping-list/' + l.shopping_list_id)}>
             <div className="spread">

@@ -428,6 +428,7 @@ addCol('ShoppingItem', 'secondary_category', 'TEXT');                // 二级�
 addCol('ShoppingList', 'purchase_date', 'TEXT');                     // 采购日期（YYYY-MM-DD）
 addCol('ShoppingList', 'receipt_total', 'REAL');                     // Receipt 识别/手填总金额
 addCol('ShoppingList', 'receipt_items', 'TEXT');                     // Receipt 逐项识别明细 JSON（含与清单的匹配结果）
+addCol('ShoppingList', 'deleted_at', 'TEXT');                        // 软删除时间（回收站，30 天后彻底清除）
 addCol('ShoppingList', 'helper_entered_total', 'REAL');             // 女佣录入总金额
 addCol('ShoppingList', 'employer_confirmed_total', 'REAL');          // 雇主确认金额
 addCol('ShoppingList', 'amount_match_status', 'TEXT');               // matched|mismatch|unrecognized|manual
