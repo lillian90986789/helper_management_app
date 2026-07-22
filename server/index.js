@@ -1191,10 +1191,11 @@ api.patch('/templates/:id', (req, res) => {
   }
   // 同步今天"尚未开始"的实例（6.3：已开始/已完成不改）
   if (b.weekdays === undefined) {
-    db.prepare(`UPDATE DailyTask SET task_name_snapshot=?, task_name_en_snapshot=?, description_snapshot=?, priority=?, estimated_duration=?, photo_check_rule=?
+    db.prepare(`UPDATE DailyTask SET task_name_snapshot=?, task_name_en_snapshot=?, description_snapshot=?, priority=?, estimated_duration=?, photo_check_rule=?, require_photo=?
       WHERE task_template_id=? AND task_date=? AND status='today_todo'`)
       .run(b.task_name ?? tpl.task_name, b.task_name_en ?? tpl.task_name_en, b.description ?? tpl.description, b.priority ?? tpl.priority, b.estimated_duration ?? tpl.estimated_duration,
-        b.photo_check_rule !== undefined ? (String(b.photo_check_rule || '').trim() || null) : tpl.photo_check_rule, tpl.task_template_id, todayYmd());
+        b.photo_check_rule !== undefined ? (String(b.photo_check_rule || '').trim() || null) : tpl.photo_check_rule,
+        b.require_photo != null ? (b.require_photo ? 1 : 0) : tpl.require_photo, tpl.task_template_id, todayYmd());
     if (Array.isArray(b.checklist)) {
       const todays = db.prepare("SELECT daily_task_id FROM DailyTask WHERE task_template_id=? AND task_date=? AND status='today_todo'").all(tpl.task_template_id, todayYmd());
       for (const { daily_task_id } of todays) {
