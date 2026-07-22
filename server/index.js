@@ -132,7 +132,9 @@ async function trMany(texts, lang) {
       need.forEach((t, i) => { out[t] = results[i]; trCacheSet(lang, t, results[i]); });
     } catch (e) { /* 失败：保留原文 */ }
   }
-  return (t) => (hasCJK(t) && out[t]) || t;
+  // f(text, fallback)：有译文用译文；否则用 fallback（已存的 _en 字段）；再否则原文。
+  // 之前无 Key 时会用中文原文覆盖已存的英文字段，导致女佣端英文界面显示中文。
+  return (t, fb) => (hasCJK(t) && out[t]) || fb || t;
 }
 // 本地化女佣端展示字段：把中文字段翻译后放进对应 _en 字段（前端 pick 消费）；description 直接替换
 async function localizeTasks(req, tasks) {
@@ -141,9 +143,9 @@ async function localizeTasks(req, tasks) {
   for (const t of tasks) { pool.push(t.title, t.description); (t.checklist || []).forEach((c) => pool.push(c.title)); }
   const f = await trMany(pool, lang);
   for (const t of tasks) {
-    if (hasCJK(t.title)) t.title_en = f(t.title);
-    if (hasCJK(t.description)) t.description = f(t.description);
-    (t.checklist || []).forEach((c) => { if (hasCJK(c.title)) c.title_en = f(c.title); });
+    if (hasCJK(t.title)) t.title_en = f(t.title, t.title_en);
+    if (hasCJK(t.description)) t.description = f(t.description, t.description_en);
+    (t.checklist || []).forEach((c) => { if (hasCJK(c.title)) c.title_en = f(c.title, c.title_en); });
   }
   return tasks;
 }
@@ -155,9 +157,9 @@ async function localizeRecipes(req, recipes) {
   const f = await trMany(pool, lang);
   for (const r of list) {
     if (!r) continue;
-    if (hasCJK(r.name)) r.name_en = f(r.name);
-    (r.ingredients || []).forEach((i) => { if (hasCJK(i.name)) i.name_en = f(i.name); });
-    (r.steps || []).forEach((s) => { if (hasCJK(s.instruction)) s.instruction_en = f(s.instruction); });
+    if (hasCJK(r.name)) r.name_en = f(r.name, r.name_en);
+    (r.ingredients || []).forEach((i) => { if (hasCJK(i.name)) i.name_en = f(i.name, i.name_en); });
+    (r.steps || []).forEach((s) => { if (hasCJK(s.instruction)) s.instruction_en = f(s.instruction, s.instruction_en); });
   }
   return recipes;
 }
@@ -167,7 +169,7 @@ async function localizeLists(req, lists) {
   const pool = [];
   for (const l of arr) { if (!l) continue; (l.items || []).forEach((i) => pool.push(i.name)); }
   const f = await trMany(pool, lang);
-  for (const l of arr) { if (!l) continue; (l.items || []).forEach((i) => { if (hasCJK(i.name)) i.name_en = f(i.name); }); }
+  for (const l of arr) { if (!l) continue; (l.items || []).forEach((i) => { if (hasCJK(i.name)) i.name_en = f(i.name, i.name_en); }); }
   return lists;
 }
 
@@ -917,8 +919,8 @@ api.post('/checklist/:id/toggle', (req, res) => {
 // 无 API Key / 图片读不到 / 调用失败时返回 null（不阻塞提交，标记"未检查"）
 const PHOTO_CHECK_SCHEMA = {
   type: 'object', additionalProperties: false,
-  properties: { pass: { type: 'boolean' }, reason: { type: 'string' } },
-  required: ['pass', 'reason'],
+  properties: { pass: { type: 'boolean' }, reason: { type: 'string' }, reason_en: { type: 'string' } },
+  required: ['pass', 'reason', 'reason_en'],
 };
 async function claudePhotoCheck(fileUrl, rule) {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -938,7 +940,7 @@ async function claudePhotoCheck(fileUrl, rule) {
       output_config: { format: { type: 'json_schema', schema: PHOTO_CHECK_SCHEMA }, effort: 'low' },
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-        { type: 'text', text: `这是家务任务的完成照片。雇主设定的检查规则：「${rule}」。\n请判断照片是否符合规则：符合返回 pass=true；违反返回 pass=false 并用一句中文说明看到了什么。照片内容与规则无关或无法判断时返回 pass=true（疑罪从无），reason 注明"无法确认"。`, },
+        { type: 'text', text: `这是家务任务的完成照片。雇主设定的检查规则：「${rule}」。\n请判断照片是否符合规则：符合返回 pass=true；违反返回 pass=false。reason 用一句中文说明看到了什么，reason_en 为同义英文（给英文界面的家政助理看）。照片内容与规则无关或无法判断时返回 pass=true（疑罪从无），reason 注明"无法确认"、reason_en 注明 "Cannot verify"。`, },
       ] }],
     }),
   });
@@ -1682,11 +1684,11 @@ api.post('/maid-requests/:id/review', (req, res) => {
     itemId = db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,status)
       VALUES (?,?,?,'食材','食材','其他食材','🥬',?,?,'to_buy')`)
       .run(list.shopping_list_id, r.name, r.name_en || '', r.quantity || 1, r.unit || '').lastInsertRowid;
-    notify(famId(req), 'shopping', '食材申请已加入采购清单：' + r.name, `清单「${list.title}」`, 'shopping', list.shopping_list_id, 'maid', r.maid_id);
+    notify(famId(req), 'shopping', 'Request added to shopping list: ' + r.name, `List "${list.title}"`, 'shopping', list.shopping_list_id, 'maid', r.maid_id);
   } else if (action === 'online') {
-    notify(famId(req), 'shopping', '雇主将在线上购买：' + r.name, '无需列入线下采购', 'maid_request', r.request_id, 'maid', r.maid_id);
+    notify(famId(req), 'shopping', 'Employer will buy online: ' + r.name, 'No need to buy offline', 'maid_request', r.request_id, 'maid', r.maid_id);
   } else {
-    notify(famId(req), 'shopping', '食材申请未通过：' + r.name, req.body.note || '', 'maid_request', r.request_id, 'maid', r.maid_id);
+    notify(famId(req), 'shopping', 'Request declined: ' + r.name, req.body.note || '', 'maid_request', r.request_id, 'maid', r.maid_id);
   }
   db.prepare("UPDATE MaidRequest SET status=?, shopping_item_id=?, reviewed_at=datetime('now','localtime') WHERE request_id=?").run(action, itemId, r.request_id);
   res.json(db.prepare('SELECT * FROM MaidRequest WHERE request_id=?').get(r.request_id));
@@ -1765,11 +1767,11 @@ api.post('/items/:id/review', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(it.shopping_list_id);
   if (req.body.approve) {
     db.prepare("UPDATE ShoppingItem SET status='to_buy' WHERE shopping_item_id=?").run(it.shopping_item_id);
-    notify(l.family_id, 'shopping', '雇主已同意购买：' + it.name, `清单「${l.title}」`, 'shopping', l.shopping_list_id, 'maid');
+    notify(l.family_id, 'shopping', 'Approved to buy: ' + it.name, `List "${l.title}"`, 'shopping', l.shopping_list_id, 'maid');
     return res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(it.shopping_item_id));
   }
   db.prepare('DELETE FROM ShoppingItem WHERE shopping_item_id=?').run(it.shopping_item_id);
-  notify(l.family_id, 'shopping', '雇主未同意购买：' + it.name, `清单「${l.title}」`, 'shopping', l.shopping_list_id, 'maid');
+  notify(l.family_id, 'shopping', 'Declined: ' + it.name, `List "${l.title}"`, 'shopping', l.shopping_list_id, 'maid');
   res.json({ ok: true, rejected: true });
 });
 api.delete('/items/:id', (req, res) => {

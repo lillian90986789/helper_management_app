@@ -93,7 +93,7 @@ export default function TaskDetail() {
         {/* 完成照片 */}
         <div className="section-title">📷 {t('attachments')} {task.require_photo && <span className="badge red tiny">{lang==='en'?'Required':'需照片'}</span>}</div>
         <div className="card">
-          {task.photo_check_rule && <div className="tiny muted" style={{ marginBottom: 8 }}>🤖 {t('photoCheckRule')}: {task.photo_check_rule}</div>}
+          {task.photo_check_rule && role !== 'maid' && <div className="tiny muted" style={{ marginBottom: 8 }}>🤖 {t('photoCheckRule')}: {task.photo_check_rule}</div>}
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
             {completionPhotos.map((a) => {
               const c = parseCheck(a);
@@ -102,7 +102,7 @@ export default function TaskDetail() {
                   {/^\/uploads|^data:|^http/.test(a.file_url || '')
                     ? <ZoomImg src={a.file_url} className="thumb lg" style={{ objectFit: 'cover' }} />
                     : <div className="thumb lg">{a.file_url}</div>}
-                  {c && <span className={'badge tiny ' + (c.pass ? 'teal' : 'red')} title={c.reason}
+                  {c && <span className={'badge tiny ' + (c.pass ? 'teal' : 'red')} title={pick(lang, c.reason, c.reason_en)}
                     style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
                     {c.pass ? '✓ ' + t('checkPassed') : '⚠️ ' + t('checkFailed')}</span>}
                 </div>
@@ -116,7 +116,7 @@ export default function TaskDetail() {
           </div>
           {completionPhotos.some((a) => parseCheck(a) && !parseCheck(a).pass) && (
             <div className="tiny mt8" style={{ color: 'var(--red)' }}>
-              {completionPhotos.filter((a) => parseCheck(a) && !parseCheck(a).pass).map((a) => '⚠️ ' + parseCheck(a).reason).join('；')}
+              {completionPhotos.filter((a) => parseCheck(a) && !parseCheck(a).pass).map((a) => { const c = parseCheck(a); return '⚠️ ' + pick(lang, c.reason, c.reason_en); }).join('；')}
             </div>
           )}
         </div>
