@@ -791,12 +791,12 @@ function ensureDailyTasks(dateStr, familyId) {
     const exists = db.prepare('SELECT 1 FROM DailyTask WHERE task_template_id=? AND task_date=?').get(tpl.task_template_id, dateStr);
     if (exists) continue;
     const id = db.prepare(`INSERT INTO DailyTask
-      (task_template_id,family_id,task_date,weekday,assignee_id,task_name_snapshot,task_name_en_snapshot,description_snapshot,area_id,priority,estimated_duration,require_photo,minimum_photo_count,require_note,require_approval,sort_order,status)
-      VALUES (@tpl,@fam,@date,@wd,@assignee,@n,@ne,@d,@area,@pri,@dur,@rp,@minp,@rn,@ra,@sort,'today_todo')`)
+      (task_template_id,family_id,task_date,weekday,assignee_id,task_name_snapshot,task_name_en_snapshot,description_snapshot,area_id,priority,estimated_duration,require_photo,minimum_photo_count,require_note,require_approval,photo_check_rule,sort_order,status)
+      VALUES (@tpl,@fam,@date,@wd,@assignee,@n,@ne,@d,@area,@pri,@dur,@rp,@minp,@rn,@ra,@pcr,@sort,'today_todo')`)
       .run({ tpl: tpl.task_template_id, fam: family.family_id, date: dateStr, wd, assignee: tpl.assignee_id,
         n: tpl.task_name, ne: tpl.task_name_en, d: tpl.description, area: tpl.area_id, pri: tpl.priority,
         dur: tpl.estimated_duration, rp: tpl.require_photo, minp: tpl.minimum_photo_count, rn: tpl.require_note,
-        ra: tpl.require_approval, sort: tpl.sort_order }).lastInsertRowid;
+        ra: tpl.require_approval, pcr: tpl.photo_check_rule || null, sort: tpl.sort_order }).lastInsertRowid;
     const cls = db.prepare('SELECT * FROM TaskTemplateChecklist WHERE task_template_id=? ORDER BY sort_order').all(tpl.task_template_id);
     cls.forEach((c, i) => db.prepare(`INSERT INTO DailyTaskChecklist (daily_task_id,title,title_en,required,sort_order) VALUES (?,?,?,?,?)`).run(id, c.title, c.title_en, c.required, i));
   }
@@ -842,13 +842,13 @@ api.post('/daily', (req, res) => {
   const taskDate = /^\d{4}-\d{2}-\d{2}$/.test(b.task_date || '') ? b.task_date : todayYmd();
   const d = parseYmd(taskDate);
   const id = db.prepare(`INSERT INTO DailyTask
-    (task_template_id,family_id,task_date,weekday,assignee_id,task_name_snapshot,task_name_en_snapshot,description_snapshot,area_id,priority,estimated_duration,require_photo,minimum_photo_count,require_note,require_approval,sort_order,status)
-    VALUES (NULL,@fam,@date,@wd,@assignee,@n,@ne,@d,@area,@pri,@dur,@rp,@minp,@rn,@ra,0,'today_todo')`)
+    (task_template_id,family_id,task_date,weekday,assignee_id,task_name_snapshot,task_name_en_snapshot,description_snapshot,area_id,priority,estimated_duration,require_photo,minimum_photo_count,require_note,require_approval,photo_check_rule,sort_order,status)
+    VALUES (NULL,@fam,@date,@wd,@assignee,@n,@ne,@d,@area,@pri,@dur,@rp,@minp,@rn,@ra,@pcr,0,'today_todo')`)
     .run({ fam: family.family_id, date: taskDate, wd: isoWeekday(d), assignee: b.assignee_id,
       n: String(b.task_name).trim(), ne: b.task_name_en || '', d: b.description || '', area: b.area_id,
       pri: ['normal','important','urgent'].includes(b.priority) ? b.priority : 'normal',
       dur: b.estimated_duration || 30, rp: b.require_photo ? 1 : 0, minp: b.minimum_photo_count || 1,
-      rn: b.require_note ? 1 : 0, ra: b.require_approval ? 1 : 0 }).lastInsertRowid;
+      rn: b.require_note ? 1 : 0, ra: b.require_approval ? 1 : 0, pcr: String(b.photo_check_rule || '').trim() || null }).lastInsertRowid;
   (Array.isArray(b.reference_images) ? b.reference_images : []).forEach((url) =>
     db.prepare(`INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?, 'reference', ?)`).run(id, req.userId, url));
   notify(family.family_id, 'task', '新增临时任务：' + String(b.task_name).trim(), b.description || '', 'task', id, 'maid', b.assignee_id);
@@ -864,12 +864,14 @@ api.patch('/daily/:id', (req, res) => {
   db.prepare(`UPDATE DailyTask SET task_name_snapshot=COALESCE(@n,task_name_snapshot), task_name_en_snapshot=COALESCE(@ne,task_name_en_snapshot),
       description_snapshot=COALESCE(@d,description_snapshot), task_date=COALESCE(@date,task_date), weekday=COALESCE(@wd,weekday),
       assignee_id=COALESCE(@assignee,assignee_id), area_id=COALESCE(@area,area_id), priority=COALESCE(@pri,priority),
-      estimated_duration=COALESCE(@dur,estimated_duration), require_photo=COALESCE(@rp,require_photo) WHERE daily_task_id=@id`)
+      estimated_duration=COALESCE(@dur,estimated_duration), require_photo=COALESCE(@rp,require_photo),
+      photo_check_rule=CASE WHEN @has_pcr THEN @pcr ELSE photo_check_rule END WHERE daily_task_id=@id`)
     .run({ n: b.task_name !== undefined ? String(b.task_name).trim() : null, ne: b.task_name_en ?? null, d: b.description ?? null,
       date: taskDate, wd: taskDate ? isoWeekday(parseYmd(taskDate)) : null,
       assignee: b.assignee_id ?? null, area: b.area_id ?? null,
       pri: ['normal','important','urgent'].includes(b.priority) ? b.priority : null,
-      dur: b.estimated_duration ?? null, rp: b.require_photo === undefined ? null : (b.require_photo ? 1 : 0), id: t.daily_task_id });
+      dur: b.estimated_duration ?? null, rp: b.require_photo === undefined ? null : (b.require_photo ? 1 : 0),
+      has_pcr: b.photo_check_rule !== undefined ? 1 : 0, pcr: String(b.photo_check_rule || '').trim() || null, id: t.daily_task_id });
   if (Array.isArray(b.reference_images)) {
     db.prepare("DELETE FROM DailyTaskAttachment WHERE daily_task_id=? AND file_type='reference'").run(t.daily_task_id);
     b.reference_images.forEach((url) =>
@@ -911,11 +913,56 @@ api.post('/checklist/:id/toggle', (req, res) => {
   db.prepare('UPDATE DailyTaskChecklist SET status=? WHERE checklist_id=?').run(ns, c.checklist_id);
   res.json({ ...c, status: ns });
 });
-api.post('/daily/:id/attachment', (req, res) => {
-  const t = db.prepare('SELECT family_id FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
+// AI 照片检查：按任务规则用 Claude 视觉检查完成照片（如"洗衣机洗的衣服里不能有内衣内裤"）。
+// 无 API Key / 图片读不到 / 调用失败时返回 null（不阻塞提交，标记"未检查"）
+const PHOTO_CHECK_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: { pass: { type: 'boolean' }, reason: { type: 'string' } },
+  required: ['pass', 'reason'],
+};
+async function claudePhotoCheck(fileUrl, rule) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key || !/^\/uploads\//.test(fileUrl || '')) return null;
+  let base64, mediaType;
+  try {
+    const p = join(uploadsDir, fileUrl.replace('/uploads/', ''));
+    base64 = fs.readFileSync(p).toString('base64');
+    const ext = (fileUrl.split('.').pop() || 'jpg').toLowerCase();
+    mediaType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  } catch { return null; }
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-opus-4-8', max_tokens: 512,
+      output_config: { format: { type: 'json_schema', schema: PHOTO_CHECK_SCHEMA }, effort: 'low' },
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+        { type: 'text', text: `这是家务任务的完成照片。雇主设定的检查规则：「${rule}」。\n请判断照片是否符合规则：符合返回 pass=true；违反返回 pass=false 并用一句中文说明看到了什么。照片内容与规则无关或无法判断时返回 pass=true（疑罪从无），reason 注明"无法确认"。`, },
+      ] }],
+    }),
+  });
+  if (!r.ok) { console.error('照片检查失败', r.status, await r.text().catch(() => '')); return null; }
+  const data = await r.json();
+  const tb = (data.content || []).find((b) => b.type === 'text');
+  try { return JSON.parse(tb.text); } catch { return null; }
+}
+
+api.post('/daily/:id/attachment', async (req, res) => {
+  const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
   if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
   const { file_url, file_type, uploader_id } = req.body;
-  db.prepare('INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?,?,?)').run(req.params.id, uploader_id || 2, file_type || 'image', file_url);
+  const aid = db.prepare('INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?,?,?)')
+    .run(req.params.id, uploader_id || 2, file_type || 'image', file_url).lastInsertRowid;
+  // 完成照片 + 任务配了检查规则 → AI 检查并落库；违规通知雇主
+  if ((file_type || 'image') !== 'reference' && t.photo_check_rule) {
+    let check = null;
+    try { check = await claudePhotoCheck(file_url, t.photo_check_rule); } catch (e) { console.error('photo check error', e); }
+    if (check) {
+      db.prepare('UPDATE DailyTaskAttachment SET check_result=? WHERE attachment_id=?').run(JSON.stringify(check), aid);
+      if (!check.pass) notify(t.family_id, 'task', '⚠️ 照片检查未通过：' + t.task_name_snapshot, check.reason, 'task', t.daily_task_id, 'employer');
+    }
+  }
   res.json(db.prepare('SELECT * FROM DailyTaskAttachment WHERE daily_task_id=?').all(req.params.id));
 });
 
@@ -1102,12 +1149,13 @@ api.post('/templates', (req, res) => {
   if (weekdays.length === 0) return res.status(400).json({ error: 'weekdays_required' }); // 未选星期不能发布
   const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order),0) m FROM TaskTemplate WHERE family_id=?').get(famId(req)).m;
   const r = db.prepare(`INSERT INTO TaskTemplate
-    (family_id,task_name,task_name_en,description,area_id,assignee_id,priority,estimated_duration,weekdays,require_photo,minimum_photo_count,require_note,require_approval,notify_employer,sort_order,status,creator_id)
-    VALUES (@family_id,@task_name,@task_name_en,@description,@area_id,@assignee_id,@priority,@estimated_duration,@weekdays,@require_photo,@minimum_photo_count,@require_note,@require_approval,@notify_employer,@sort_order,@status,@creator_id)`)
+    (family_id,task_name,task_name_en,description,area_id,assignee_id,priority,estimated_duration,weekdays,require_photo,minimum_photo_count,require_note,require_approval,notify_employer,photo_check_rule,sort_order,status,creator_id)
+    VALUES (@family_id,@task_name,@task_name_en,@description,@area_id,@assignee_id,@priority,@estimated_duration,@weekdays,@require_photo,@minimum_photo_count,@require_note,@require_approval,@notify_employer,@photo_check_rule,@sort_order,@status,@creator_id)`)
     .run({ family_id: family.family_id, task_name: b.task_name || '', task_name_en: b.task_name_en || '', description: b.description || '',
       area_id: b.area_id || null, assignee_id: b.assignee_id || 2, priority: b.priority || 'normal', estimated_duration: b.estimated_duration || 30,
       weekdays: JSON.stringify(weekdays), require_photo: b.require_photo ? 1 : 0, minimum_photo_count: b.minimum_photo_count || 1,
       require_note: b.require_note ? 1 : 0, require_approval: b.require_approval ? 1 : 0, notify_employer: b.notify_employer === false ? 0 : 1,
+      photo_check_rule: String(b.photo_check_rule || '').trim() || null,
       sort_order: maxSort + 1, status: b.status || 'active', creator_id: 1 });
   const id = r.lastInsertRowid;
   (b.checklist || []).forEach((c, i) => db.prepare(`INSERT INTO TaskTemplateChecklist (task_template_id,title,title_en,required,sort_order) VALUES (?,?,?,?,?)`).run(id, c.title, c.title_en || '', c.required ? 1 : 0, i));
@@ -1125,18 +1173,20 @@ api.patch('/templates/:id', (req, res) => {
   db.prepare(`UPDATE TaskTemplate SET task_name=@task_name, task_name_en=@task_name_en, description=@description, area_id=@area_id,
       assignee_id=@assignee_id, priority=@priority, estimated_duration=@estimated_duration, weekdays=@weekdays,
       require_photo=@require_photo, minimum_photo_count=@minimum_photo_count, require_note=@require_note, require_approval=@require_approval,
-      updated_at=datetime('now','localtime') WHERE task_template_id=@id`)
+      photo_check_rule=@photo_check_rule, updated_at=datetime('now','localtime') WHERE task_template_id=@id`)
     .run({ task_name: b.task_name ?? tpl.task_name, task_name_en: b.task_name_en ?? tpl.task_name_en, description: b.description ?? tpl.description,
       area_id: b.area_id ?? tpl.area_id, assignee_id: b.assignee_id ?? tpl.assignee_id, priority: b.priority ?? tpl.priority,
       estimated_duration: b.estimated_duration ?? tpl.estimated_duration, weekdays: JSON.stringify(weekdays),
       require_photo: b.require_photo != null ? (b.require_photo ? 1 : 0) : tpl.require_photo, minimum_photo_count: b.minimum_photo_count ?? tpl.minimum_photo_count,
       require_note: b.require_note != null ? (b.require_note ? 1 : 0) : tpl.require_note, require_approval: b.require_approval != null ? (b.require_approval ? 1 : 0) : tpl.require_approval,
+      photo_check_rule: b.photo_check_rule !== undefined ? (String(b.photo_check_rule || '').trim() || null) : tpl.photo_check_rule,
       id: tpl.task_template_id });
   // 同步今天"尚未开始"的实例（6.3：已开始/已完成不改）
   if (b.weekdays === undefined) {
-    db.prepare(`UPDATE DailyTask SET task_name_snapshot=?, task_name_en_snapshot=?, description_snapshot=?, priority=?, estimated_duration=?
+    db.prepare(`UPDATE DailyTask SET task_name_snapshot=?, task_name_en_snapshot=?, description_snapshot=?, priority=?, estimated_duration=?, photo_check_rule=?
       WHERE task_template_id=? AND task_date=? AND status='today_todo'`)
-      .run(b.task_name ?? tpl.task_name, b.task_name_en ?? tpl.task_name_en, b.description ?? tpl.description, b.priority ?? tpl.priority, b.estimated_duration ?? tpl.estimated_duration, tpl.task_template_id, todayYmd());
+      .run(b.task_name ?? tpl.task_name, b.task_name_en ?? tpl.task_name_en, b.description ?? tpl.description, b.priority ?? tpl.priority, b.estimated_duration ?? tpl.estimated_duration,
+        b.photo_check_rule !== undefined ? (String(b.photo_check_rule || '').trim() || null) : tpl.photo_check_rule, tpl.task_template_id, todayYmd());
   }
   res.json(templateWith(db.prepare('SELECT * FROM TaskTemplate WHERE task_template_id=?').get(tpl.task_template_id)));
 });
@@ -1580,6 +1630,68 @@ api.delete('/shopping/:id', (req, res) => {
   db.prepare("UPDATE ShoppingList SET deleted_at=datetime('now') WHERE shopping_list_id=?").run(l.shopping_list_id);
   res.json({ ok: true, soft_deleted: true });
 });
+// ===== 女佣每周食材申请（周五前提交 → 雇主 review 分流）=====
+// 查看某周的申请。maid 只看自己的；offset: 0=本周 1=下周 -1=上周
+api.get('/maid-requests', (req, res) => {
+  const mon = mondayOf(new Date());
+  mon.setDate(mon.getDate() + (parseInt(req.query.offset, 10) || 0) * 7);
+  const weekStart = ymd(mon);
+  const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+  let rows = db.prepare('SELECT * FROM MaidRequest WHERE family_id=? AND week_start=? ORDER BY request_id').all(famId(req), weekStart);
+  if (curUserRole(req) === 'maid') rows = rows.filter((r) => r.maid_id === req.userId);
+  res.json({ week_start: weekStart, deadline: ymd(fri), requests: rows });
+});
+// 女佣提交申请（归入当前周；周五后提交自动归入下周）
+api.post('/maid-requests', (req, res) => {
+  const b = req.body;
+  if (!b.name || !String(b.name).trim()) return res.status(400).json({ error: 'name_required' });
+  const mon = mondayOf(new Date());
+  const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+  if (todayYmd() > ymd(fri)) mon.setDate(mon.getDate() + 7); // 周六/周日提交 → 下周
+  const id = db.prepare(`INSERT INTO MaidRequest (family_id,maid_id,week_start,name,name_en,quantity,unit,notes) VALUES (?,?,?,?,?,?,?,?)`)
+    .run(famId(req), req.userId, ymd(mon), String(b.name).trim(), b.name_en || '', b.quantity || 1, b.unit || '', b.notes || '').lastInsertRowid;
+  notify(famId(req), 'shopping', '女佣提交了食材申请：' + String(b.name).trim(), '本周食材申请，请周末前处理', 'maid_request', id, 'employer');
+  res.json(db.prepare('SELECT * FROM MaidRequest WHERE request_id=?').get(id));
+});
+// 女佣撤回自己未处理的申请
+api.delete('/maid-requests/:id', (req, res) => {
+  const r = db.prepare('SELECT * FROM MaidRequest WHERE request_id=?').get(req.params.id);
+  if (!owns(req, r) || r.maid_id !== req.userId || r.status !== 'pending') return res.status(404).json({ error: 'not found' });
+  db.prepare('DELETE FROM MaidRequest WHERE request_id=?').run(r.request_id);
+  res.json({ ok: true });
+});
+// 雇主 review：to_list=加入采购清单 / online=雇主线上购买 / rejected=拒绝
+api.post('/maid-requests/:id/review', (req, res) => {
+  const r = db.prepare('SELECT * FROM MaidRequest WHERE request_id=?').get(req.params.id);
+  if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
+  if (curUserRole(req) === 'maid') return res.status(403).json({ error: 'employer_only' });
+  if (r.status !== 'pending') return res.status(400).json({ error: 'already_reviewed' });
+  const action = req.body.action;
+  if (!['to_list', 'online', 'rejected'].includes(action)) return res.status(400).json({ error: 'invalid_action' });
+  let itemId = null;
+  if (action === 'to_list') {
+    // 目标清单：指定的 > 最近一份待购清单 > 新建一份派给该女佣
+    let list = req.body.shopping_list_id
+      ? db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=? AND family_id=? AND deleted_at IS NULL').get(req.body.shopping_list_id, famId(req))
+      : db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL AND status='to_buy' ORDER BY shopping_list_id DESC").get(famId(req));
+    if (!list) {
+      const lid = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,budget,store_name,status,creator_id) VALUES (?,?,?,0,'','to_buy',1)`)
+        .run(famId(req), '女佣食材申请 ' + r.week_start, r.maid_id).lastInsertRowid;
+      list = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(lid);
+    }
+    itemId = db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,status)
+      VALUES (?,?,?,'食材','食材','其他食材','🥬',?,?,'to_buy')`)
+      .run(list.shopping_list_id, r.name, r.name_en || '', r.quantity || 1, r.unit || '').lastInsertRowid;
+    notify(famId(req), 'shopping', '食材申请已加入采购清单：' + r.name, `清单「${list.title}」`, 'shopping', list.shopping_list_id, 'maid', r.maid_id);
+  } else if (action === 'online') {
+    notify(famId(req), 'shopping', '雇主将在线上购买：' + r.name, '无需列入线下采购', 'maid_request', r.request_id, 'maid', r.maid_id);
+  } else {
+    notify(famId(req), 'shopping', '食材申请未通过：' + r.name, req.body.note || '', 'maid_request', r.request_id, 'maid', r.maid_id);
+  }
+  db.prepare("UPDATE MaidRequest SET status=?, shopping_item_id=?, reviewed_at=datetime('now','localtime') WHERE request_id=?").run(action, itemId, r.request_id);
+  res.json(db.prepare('SELECT * FROM MaidRequest WHERE request_id=?').get(r.request_id));
+});
+
 // 从回收站恢复
 api.post('/shopping/:id/restore', (req, res) => {
   const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(req.params.id);

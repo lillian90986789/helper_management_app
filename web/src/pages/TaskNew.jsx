@@ -21,7 +21,7 @@ export default function TaskNew() {
   const [f, setF] = useState({
     task_name: '', task_name_en: '', description: '', area_id: null, assignee_id: 2, priority: 'normal',
     estimated_duration: 30, weekdays: [],
-    require_photo: true, require_note: false, require_approval: true,
+    require_photo: true, require_note: false, require_approval: true, photo_check_rule: '',
   });
   const [subtasks, setSubtasks] = useState([{ title: '' }]);
   const [loaded, setLoaded] = useState(false);
@@ -34,6 +34,7 @@ export default function TaskNew() {
       area_id: existing.area_id, assignee_id: existing.assignee_id, priority: existing.priority,
       estimated_duration: existing.estimated_duration, weekdays: existing.weekdays_arr,
       require_photo: !!existing.require_photo, require_note: !!existing.require_note, require_approval: !!existing.require_approval,
+      photo_check_rule: existing.photo_check_rule || '',
     });
     setSubtasks(existing.checklist.length ? existing.checklist.map((c) => ({ title: c.title, title_en: c.title_en })) : [{ title: '' }]);
     setLoaded(true);
@@ -151,6 +152,11 @@ export default function TaskNew() {
           <Toggle label={t('requireApproval')} on={f.require_approval} onClick={() => set('require_approval', !f.require_approval)} />
         </div>
 
+        {f.require_photo && <div className="field">
+          <label>🤖 {t('photoCheckRule')} <span className="tiny muted">（{t('photoCheckRuleHint')}）</span></label>
+          <input className="input" value={f.photo_check_rule} onChange={(e) => set('photo_check_rule', e.target.value)} />
+        </div>}
+
         <div className="section-title">☑️ {t('subtasks')}</div>
         <div className="card">
           {subtasks.map((s, i) => (
@@ -203,9 +209,10 @@ function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode
     task_name: editTask.task_name_snapshot || editTask.task_name || '', description: editTask.description_snapshot || editTask.description || '',
     area_id: editTask.area_id, assignee_id: editTask.assignee_id, priority: editTask.priority || 'normal',
     due_date: editTask.task_date || '', require_photo: !!editTask.require_photo, require_approval: !!editTask.require_approval,
+    photo_check_rule: editTask.photo_check_rule || '',
   } : {
     task_name: '', description: '', area_id: null, assignee_id: assignees[0]?.user_id || null,
-    priority: 'normal', due_date: '', require_photo: true, require_approval: true,
+    priority: 'normal', due_date: '', require_photo: true, require_approval: true, photo_check_rule: '',
   });
   const [images, setImages] = useState(editTask ? (editTask.attachments || []).filter((a) => a.file_type === 'reference').map((a) => a.file_url) : []);   // 参考图片 URL 列表
   const [busy, setBusy] = useState(false);
@@ -312,6 +319,10 @@ function AdhocTaskForm({ t, lang, nav, showToast, areas, assignees, onSwitchMode
           <Toggle label={t('requirePhoto')} on={f.require_photo} onClick={() => set('require_photo', !f.require_photo)} />
           <Toggle label={t('requireApproval')} on={f.require_approval} onClick={() => set('require_approval', !f.require_approval)} />
         </div>
+        {f.require_photo && <div className="field">
+          <label>🤖 {t('photoCheckRule')} <span className="tiny muted">（{t('photoCheckRuleHint')}）</span></label>
+          <input className="input" value={f.photo_check_rule} onChange={(e) => set('photo_check_rule', e.target.value)} />
+        </div>}
       </div>
       <div className="actionbar">
         <button className="btn primary block" disabled={busy} onClick={submit}>{editTask ? t('save') : t('publishTask')}</button>

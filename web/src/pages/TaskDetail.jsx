@@ -2,7 +2,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAsync } from '../hooks.js';
 import { useI18n, pick } from '../i18n.jsx';
-import { TopBar, StatusBadge, PriorityBadge, fmtTime, Avatar, ZoomImg } from '../ui.jsx';
+import { useState } from 'react';
+import { TopBar, StatusBadge, PriorityBadge, fmtTime, Avatar, ZoomImg, compressAndUploadImage } from '../ui.jsx';
 import { useApp } from '../App.jsx';
 
 export default function TaskDetail() {
@@ -11,6 +12,7 @@ export default function TaskDetail() {
   const nav = useNavigate();
   const { role, showToast } = useApp();
   const { data: task, reload } = useAsync(() => api.dailyTask(id), [id]);
+  const [uploading, setUploading] = useState(false);
   if (!task) return <><TopBar title={t('tasks')} /><div className="empty">加载中…</div></>;
 
   const doneChecks = task.checklist.filter((c) => c.status === 'done').length;
@@ -21,7 +23,18 @@ export default function TaskDetail() {
 
   const trans = async (to, action) => { await api.taskTransition(task.task_id, { to, action, actor_id: role === 'maid' ? 2 : 1 }); showToast('✓'); reload(); };
   const toggle = async (cid) => { await api.toggleCheck(cid); reload(); };
-  const fakeUpload = async () => { await api.addAttachment(task.task_id, { file_url: task.area?.icon || '📷', file_type: 'image', uploader_id: 2 }); showToast(t('uploadPhoto') + ' ✓'); reload(); };
+  // 真实拍照上传；任务配了 AI 检查规则时后端会自动检查并回写结果
+  const onUploadPhoto = async (e) => {
+    const file = e.target.files?.[0]; if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const url = await compressAndUploadImage(file, { kind: 'task' });
+      await api.addAttachment(task.task_id, { file_url: url, file_type: 'image', uploader_id: 2 });
+      showToast(t('uploadPhoto') + ' ✓'); reload();
+    } catch { showToast(lang === 'en' ? 'Upload failed' : '上传失败'); }
+    setUploading(false); e.target.value = '';
+  };
+  const parseCheck = (a) => { try { return a.check_result ? JSON.parse(a.check_result) : null; } catch { return null; } };
 
   const submitDone = async () => {
     if (task.require_photo && !hasPhoto) return showToast(t('needPhotoHint'));
@@ -80,12 +93,32 @@ export default function TaskDetail() {
         {/* 完成照片 */}
         <div className="section-title">📷 {t('attachments')} {task.require_photo && <span className="badge red tiny">{lang==='en'?'Required':'需照片'}</span>}</div>
         <div className="card">
+          {task.photo_check_rule && <div className="tiny muted" style={{ marginBottom: 8 }}>🤖 {t('photoCheckRule')}: {task.photo_check_rule}</div>}
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-            {completionPhotos.map((a) => <div key={a.attachment_id} className="thumb lg">{a.file_url}</div>)}
+            {completionPhotos.map((a) => {
+              const c = parseCheck(a);
+              return (
+                <div key={a.attachment_id} style={{ position: 'relative' }}>
+                  {/^\/uploads|^data:|^http/.test(a.file_url || '')
+                    ? <ZoomImg src={a.file_url} className="thumb lg" style={{ objectFit: 'cover' }} />
+                    : <div className="thumb lg">{a.file_url}</div>}
+                  {c && <span className={'badge tiny ' + (c.pass ? 'teal' : 'red')} title={c.reason}
+                    style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
+                    {c.pass ? '✓ ' + t('checkPassed') : '⚠️ ' + t('checkFailed')}</span>}
+                </div>
+              );
+            })}
             {role === 'maid' && ['in_progress','returned','received'].includes(task.status) &&
-              <button className="thumb lg" style={{ border: '1.5px dashed var(--line)', background: '#fff' }} onClick={fakeUpload}>＋</button>}
+              <label className="thumb lg" style={{ border: '1.5px dashed var(--line)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {uploading ? '⏳' : '＋'}<input type="file" accept="image/*" style={{ display: 'none' }} onChange={onUploadPhoto} disabled={uploading} />
+              </label>}
             {completionPhotos.length === 0 && role !== 'maid' && <span className="muted small">{t('noData')}</span>}
           </div>
+          {completionPhotos.some((a) => parseCheck(a) && !parseCheck(a).pass) && (
+            <div className="tiny mt8" style={{ color: 'var(--red)' }}>
+              {completionPhotos.filter((a) => parseCheck(a) && !parseCheck(a).pass).map((a) => '⚠️ ' + parseCheck(a).reason).join('；')}
+            </div>
+          )}
         </div>
 
         {/* 操作记录 */}

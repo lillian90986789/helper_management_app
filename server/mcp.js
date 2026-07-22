@@ -215,6 +215,7 @@ function buildServer(token) {
       priority: z.enum(['normal', 'important', 'urgent']).optional(),
       estimated_duration: z.number().optional().describe('预计时长（分钟），默认 30'),
       require_photo: z.boolean().optional(),
+      photo_check_rule: z.string().optional().describe('AI 照片检查规则：女佣提交完成照片时自动按此检查，违反则通知雇主。如"洗衣机洗的衣服里不能有内衣内裤"'),
     },
   }, async ({ assignee_name, area_name, ...rest }) => {
     const { assignee_id, area_id } = await resolveTask(token, assignee_name, area_name);
@@ -234,6 +235,7 @@ function buildServer(token) {
       priority: z.enum(['normal', 'important', 'urgent']).optional(),
       estimated_duration: z.number().optional(),
       require_photo: z.boolean().optional(),
+      photo_check_rule: z.string().optional().describe('AI 照片检查规则；传空字符串可清除'),
     },
   }, async ({ daily_task_id, assignee_name, area_name, ...rest }) => {
     const body = { ...rest };

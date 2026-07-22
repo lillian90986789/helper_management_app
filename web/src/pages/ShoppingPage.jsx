@@ -13,8 +13,65 @@ export default function ShoppingPage({ role, detail }) {
   return <ShoppingOverview role={role} />;
 }
 
+// 女佣每周食材申请卡片：女佣提交/撤回，雇主 review（加入清单 / 线上买 / 拒绝）
+function MaidRequestCard({ role, t, lang, showToast, onListsChanged }) {
+  const { data: mr, reload } = useAsync(() => api.maidRequests());
+  const [name, setName] = useState('');
+  const [qty, setQty] = useState('');
+  if (!mr) return null;
+  const submit = async () => {
+    if (!name.trim()) return;
+    await api.addMaidRequest({ name: name.trim(), quantity: +qty || 1 });
+    setName(''); setQty(''); showToast(t('maidReqAdd') + ' ✓'); reload();
+  };
+  const review = async (id, action) => {
+    await api.reviewMaidRequest(id, { action });
+    showToast('✓'); reload();
+    if (action === 'to_list') onListsChanged?.();
+  };
+  const badge = { pending: ['gray', t('reqPending')], to_list: ['teal', t('reqToList')], online: ['blue', t('reqOnline')], rejected: ['red', t('reqRejected')] };
+  if (role === 'employer' && mr.requests.length === 0) return null; // 雇主无申请时不占位
+  return (
+    <div className="card">
+      <div className="spread">
+        <span className="bold small">🥬 {t('maidReqTitle')}</span>
+        <span className="tiny muted">{t('maidReqDeadline')} {mr.deadline.slice(5)} ({t('friS')})</span>
+      </div>
+      {role === 'maid' && <div className="tiny muted" style={{ margin: '4px 0 8px' }}>{t('maidReqHint')}</div>}
+      {mr.requests.length === 0 && <div className="tiny muted" style={{ padding: '6px 0' }}>{t('maidReqEmpty')}</div>}
+      {mr.requests.map((r) => (
+        <div key={r.request_id} className="spread" style={{ padding: '6px 0', gap: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <span className="small bold">{pick(lang, r.name, r.name_en)}</span>
+            <span className="tiny muted"> ×{r.quantity}{r.unit || ''}</span>
+          </div>
+          {r.status === 'pending' && role === 'employer'
+            ? <div className="row" style={{ gap: 4, flex: 'none' }}>
+                <button className="btn sm primary" onClick={() => review(r.request_id, 'to_list')}>➕ {t('reviewToList')}</button>
+                <button className="btn sm outline" onClick={() => review(r.request_id, 'online')}>🛒 {t('reviewOnline')}</button>
+                <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => review(r.request_id, 'rejected')}>✕</button>
+              </div>
+            : r.status === 'pending' && role === 'maid'
+            ? <div className="row" style={{ gap: 6, flex: 'none', alignItems: 'center' }}>
+                <span className={'badge tiny ' + badge[r.status][0]}>{badge[r.status][1]}</span>
+                <button className="iconbtn" onClick={async () => { await api.deleteMaidRequest(r.request_id); reload(); }} title={t('withdraw')}>✕</button>
+              </div>
+            : <span className={'badge tiny ' + badge[r.status][0]} style={{ flex: 'none' }}>{badge[r.status][1]}</span>}
+        </div>
+      ))}
+      {role === 'maid' && (
+        <div className="row mt8" style={{ gap: 6 }}>
+          <input className="input" style={{ flex: 2 }} placeholder={t('maidReqName')} value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input" style={{ flex: 1 }} type="number" placeholder={t('itemQty')} value={qty} onChange={(e) => setQty(e.target.value)} />
+          <button className="btn sm primary" style={{ flex: 'none' }} onClick={submit}>{t('maidReqAdd')}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ShoppingOverview({ role }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const nav = useNavigate();
   const { data: lists, reload } = useAsync(() => api.shoppingLists());
   const [trash, setTrash] = useState(null); // null=未展开
@@ -32,6 +89,7 @@ function ShoppingOverview({ role }) {
         {role === 'employer' && <button className="iconbtn" onClick={() => nav('/shopping-new')}>＋</button>}
       </div>
       <div className="content">
+        <MaidRequestCard role={role} t={t} lang={lang} showToast={showToast} onListsChanged={reload} />
         {trash && (
           <div className="card" style={{ background: 'var(--bg)' }}>
             <div className="bold small" style={{ marginBottom: 6 }}>🗑 {t('trashBin')}</div>
