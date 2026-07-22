@@ -1183,12 +1183,26 @@ api.patch('/templates/:id', (req, res) => {
       require_note: b.require_note != null ? (b.require_note ? 1 : 0) : tpl.require_note, require_approval: b.require_approval != null ? (b.require_approval ? 1 : 0) : tpl.require_approval,
       photo_check_rule: b.photo_check_rule !== undefined ? (String(b.photo_check_rule || '').trim() || null) : tpl.photo_check_rule,
       id: tpl.task_template_id });
+  // 子任务：传入 checklist 时整组重建（此前 PATCH 忽略该字段，网页端编辑子任务实际存不进去）
+  if (Array.isArray(b.checklist)) {
+    db.prepare('DELETE FROM TaskTemplateChecklist WHERE task_template_id=?').run(tpl.task_template_id);
+    b.checklist.forEach((c, i) => db.prepare('INSERT INTO TaskTemplateChecklist (task_template_id,title,title_en,required,sort_order) VALUES (?,?,?,?,?)')
+      .run(tpl.task_template_id, c.title, c.title_en || '', c.required ? 1 : 0, i));
+  }
   // 同步今天"尚未开始"的实例（6.3：已开始/已完成不改）
   if (b.weekdays === undefined) {
     db.prepare(`UPDATE DailyTask SET task_name_snapshot=?, task_name_en_snapshot=?, description_snapshot=?, priority=?, estimated_duration=?, photo_check_rule=?
       WHERE task_template_id=? AND task_date=? AND status='today_todo'`)
       .run(b.task_name ?? tpl.task_name, b.task_name_en ?? tpl.task_name_en, b.description ?? tpl.description, b.priority ?? tpl.priority, b.estimated_duration ?? tpl.estimated_duration,
         b.photo_check_rule !== undefined ? (String(b.photo_check_rule || '').trim() || null) : tpl.photo_check_rule, tpl.task_template_id, todayYmd());
+    if (Array.isArray(b.checklist)) {
+      const todays = db.prepare("SELECT daily_task_id FROM DailyTask WHERE task_template_id=? AND task_date=? AND status='today_todo'").all(tpl.task_template_id, todayYmd());
+      for (const { daily_task_id } of todays) {
+        db.prepare('DELETE FROM DailyTaskChecklist WHERE daily_task_id=?').run(daily_task_id);
+        b.checklist.forEach((c, i) => db.prepare('INSERT INTO DailyTaskChecklist (daily_task_id,title,title_en,required,sort_order) VALUES (?,?,?,?,?)')
+          .run(daily_task_id, c.title, c.title_en || '', c.required ? 1 : 0, i));
+      }
+    }
   }
   res.json(templateWith(db.prepare('SELECT * FROM TaskTemplate WHERE task_template_id=?').get(tpl.task_template_id)));
 });
