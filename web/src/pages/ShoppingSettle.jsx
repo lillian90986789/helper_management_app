@@ -27,22 +27,22 @@ export default function ShoppingSettle() {
 
   useEffect(() => { api.categories().then(setCats); }, []);
   const GST = cats?.gst_rate ?? 0.09;
-  useEffect(() => {
-    api.shopping(id).then((l) => {
-      setList(l);
-      const r = {};
-      l.items.forEach((it) => { r[it.shopping_item_id] = {
-        qty: it.actual_quantity ?? it.quantity, price: it.actual_unit_price ?? it.estimated_price ?? 0, discount: it.discount ?? 0,
-        oos: it.status === 'out_of_stock', name: it.name,
-        primary_category: it.primary_category || '食材', secondary_category: it.secondary_category || (it.primary_category === '食材' ? '肉类' : null) };
-      });
-      setRows(r);
-      setOtherFee(l.other_fee || 0);
-      setReceipt(l.receipt_image || '');
-      setReceiptTotal(l.receipt_total != null ? l.receipt_total : '');
-      setPayment(l.payment_method || '雇主现金');
+  const load = () => api.shopping(id).then((l) => {
+    setList(l);
+    const r = {};
+    l.items.forEach((it) => { r[it.shopping_item_id] = {
+      qty: it.actual_quantity ?? it.quantity, price: it.actual_unit_price ?? it.estimated_price ?? 0, discount: it.discount ?? 0,
+      oos: it.status === 'out_of_stock', name: it.name,
+      primary_category: it.primary_category || '食材', secondary_category: it.secondary_category || (it.primary_category === '食材' ? '肉类' : null) };
     });
-  }, [id]);
+    setRows(r);
+    setOtherFee(l.other_fee || 0);
+    setReceipt(l.receipt_image || '');
+    setReceiptTotal(l.receipt_total != null ? l.receipt_total : '');
+    setPayment(l.payment_method || '雇主现金');
+    return l;
+  });
+  useEffect(() => { load(); }, [id]);
   if (!list) return <><TopBar title={t('settle')} /><div className="empty">加载中…</div></>;
 
   const setRow = (iid, k, v) => setRows((p) => ({ ...p, [iid]: { ...p[iid], [k]: v } }));
@@ -65,8 +65,14 @@ export default function ShoppingSettle() {
     try {
       const dataUrl = await new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = err; fr.readAsDataURL(file); });
       const r = await api.scanReceipt(list.shopping_list_id, { image_base64: dataUrl, media_type: file.type });
-      setReceipt(r.file_url); setReceiptTotal(r.total != null ? r.total : ''); setScanInfo(r);
-      showToast((r.source === 'claude' ? (en ? 'Recognized: S$' : 'Claude 识别：S$') : (en ? 'Demo scan: S$' : '模拟识别：S$')) + (r.total||0).toFixed(2));
+      setScanInfo(r);
+      // 自动匹配已在后端回填商品实际数量/单价（漏买标缺货），重取清单让各行显示回填结果
+      await load();
+      setReceipt(r.file_url); setReceiptTotal(r.total != null ? r.total : '');
+      const ar = r.auto_review;
+      showToast(ar && ar.applied
+        ? (en ? `Auto-matched ${ar.applied} · missed ${ar.missing} · extra ${ar.extra}` : `自动匹配 ${ar.applied} 项 · 漏买 ${ar.missing} · 多买 ${ar.extra}`)
+        : (r.source === 'claude' ? (en ? 'Recognized: S$' : 'Claude 识别：S$') : (en ? 'Demo scan: S$' : '模拟识别：S$')) + (r.total||0).toFixed(2));
     } catch (err) { showToast(en ? 'Scan failed' : '识别失败，请重试'); }
     setScanning(false); e.target.value = '';
   };

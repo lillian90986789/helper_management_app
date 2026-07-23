@@ -1562,16 +1562,51 @@ api.post('/shopping/:id/receipt-scan', async (req, res) => {
     ocr = { source: 'mock', store_name: l.store_name || 'FairPrice', purchase_date: todayYmd(), currency: 'SGD',
       subtotal: +sub.toFixed(2), tax, total: +(sub + tax).toFixed(2), items: [] };
   }
-  // 逐项比对：小票行无匹配 = 清单外多买；清单商品未出现在小票 = 小票未见
+  // 逐项比对：小票行无匹配 = 清单外多买；清单商品未出现在小票 = 漏买
   const matchedIds = new Set((ocr.items || []).map((i) => i.matched_shopping_item_id).filter(Boolean));
-  ocr.missing_items = ocr.items?.length
-    ? listForMatch.filter((i) => !matchedIds.has(i.shopping_item_id)).map((i) => ({ shopping_item_id: i.shopping_item_id, name: i.name }))
-    : [];
-  ocr.extra_count = (ocr.items || []).filter((i) => !i.matched_shopping_item_id).length;
-  // 落库：小票图片 + 识别总额 + 商店/日期 + 逐项明细（含匹配结果，供雇主端展示）
-  const receiptItemsJson = ocr.items?.length ? JSON.stringify({ items: ocr.items, missing_items: ocr.missing_items }) : null;
+  const missing = ocr.items?.length ? listForMatch.filter((i) => !matchedIds.has(i.shopping_item_id)) : [];
+  ocr.missing_items = missing.map((i) => ({ shopping_item_id: i.shopping_item_id, name: i.name, name_en: i.name_en || null }));
+  ocr.extra_items = (ocr.items || []).filter((i) => !i.matched_shopping_item_id)
+    .map((i) => ({ name: i.name, quantity: i.quantity, line_total: i.line_total }));
+  ocr.extra_count = ocr.extra_items.length;
+
+  // Auto-review：识别成功时把匹配结果写回清单商品——匹配行自动标已购并回填实际数量/单价/小计
+  // （同一商品多行小票合并），漏买商品自动标缺货。仅动 to_buy/bought/out_of_stock，替代/待审商品不碰
+  let appliedCount = 0;
+  if (ocr.source === 'claude' && ocr.items?.length) {
+    const agg = new Map();
+    for (const line of ocr.items) {
+      if (!line.matched_shopping_item_id) continue;
+      const a = agg.get(line.matched_shopping_item_id) || { qty: 0, total: 0 };
+      a.qty += (+line.quantity || 1);
+      a.total += (+line.line_total || 0);
+      agg.set(line.matched_shopping_item_id, a);
+    }
+    const autoTouchable = new Set(['to_buy', 'bought', 'out_of_stock']);
+    db.transaction(() => {
+      for (const [iid, a] of agg) {
+        const it = view.items.find((x) => x.shopping_item_id === iid);
+        if (!it || !autoTouchable.has(it.status)) continue;
+        const qty = a.qty || it.quantity || 1;
+        db.prepare(`UPDATE ShoppingItem SET status='bought', actual_quantity=?, actual_unit_price=?, discount=0, actual_total=? WHERE shopping_item_id=?`)
+          .run(qty, +(a.total / qty).toFixed(2), +a.total.toFixed(2), iid);
+        appliedCount++;
+      }
+      for (const m of missing) {
+        const it = view.items.find((x) => x.shopping_item_id === m.shopping_item_id);
+        if (it && it.status === 'to_buy') db.prepare(`UPDATE ShoppingItem SET status='out_of_stock' WHERE shopping_item_id=?`).run(it.shopping_item_id);
+      }
+    })();
+  }
+  ocr.auto_review = { applied: appliedCount, matched: matchedIds.size, missing: ocr.missing_items.length, extra: ocr.extra_count };
+  // 落库：小票图片 + 识别总额 + 商店/日期 + 逐项明细（含匹配/漏买/多买，供双端展示）
+  const receiptItemsJson = ocr.items?.length
+    ? JSON.stringify({ items: ocr.items, missing_items: ocr.missing_items, extra_items: ocr.extra_items, auto_review: ocr.auto_review })
+    : null;
+  // 自动回填改变了商品实际金额，重取清单后再与小票总额核对
+  const fresh = appliedCount ? listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(l.shopping_list_id)) : view;
   db.prepare(`UPDATE ShoppingList SET receipt_image=?, receipt_total=?, store_name=COALESCE(NULLIF(?,''),store_name), purchase_date=COALESCE(NULLIF(?,''),purchase_date), amount_match_status=?, receipt_items=COALESCE(?,receipt_items) WHERE shopping_list_id=?`)
-    .run(fileUrl, ocr.total, ocr.store_name || '', ocr.purchase_date || '', matchStatus(view.helper_total, ocr.total), receiptItemsJson, l.shopping_list_id);
+    .run(fileUrl, ocr.total, ocr.store_name || '', ocr.purchase_date || '', matchStatus(fresh.helper_total, ocr.total), receiptItemsJson, l.shopping_list_id);
   res.json({ ...ocr, file_url: fileUrl, gst_rate: gstRate(famId(req)) });
 });
 

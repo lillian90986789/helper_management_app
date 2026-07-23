@@ -158,27 +158,40 @@ export function VideoButton({ url }) {
   );
 }
 
-// 小票逐项识别 + 与采购清单比对：匹配的打勾，清单外多买的标红，清单有但小票未见的提示
+// 小票逐项识别 + 与采购清单比对：匹配的打勾，清单外多买的标红，清单有但小票未见的列「漏买」
 export function ReceiptCompare({ data, listItems, lang, t }) {
   if (!data?.items?.length) return null;
   const nameOf = (id) => { const it = (listItems || []).find((x) => x.shopping_item_id === id); return it ? pick(lang, it.name, it.name_en) : null; };
+  const matched = data.items.filter((i) => i.matched_shopping_item_id).length;
+  const missingN = data.missing_items?.length || 0;
+  const extraN = data.extra_items ? data.extra_items.length : data.items.length - matched;
   return (
     <div style={{ marginTop: 10 }}>
       <div className="bold small" style={{ marginBottom: 6 }}>🧾 {t('receiptItemsTitle')}</div>
+      {/* 匹配结果汇总：已匹配 / 漏买 / 多买 */}
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+        <span className="badge teal tiny">✓ {t('matchedItems')} {matched}</span>
+        {missingN > 0 && <span className="badge amber tiny">⚠️ {t('missedBuy')} {missingN}</span>}
+        {extraN > 0 && <span className="badge red tiny">➕ {t('overBought')} {extraN}</span>}
+      </div>
+      {data.auto_review?.applied > 0 && <div className="tiny muted" style={{ marginBottom: 6 }}>🤖 {t('autoFilledNote')}</div>}
       {data.items.map((it, i) => (
         <div key={i} className="spread" style={{ padding: '3px 0', gap: 8 }}>
           <span className="small" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {it.matched_shopping_item_id
               ? <span style={{ color: 'var(--teal)' }}>✓</span>
-              : <span className="badge red tiny">{t('extraItem')}</span>} {it.name}
+              : <span className="badge red tiny">{t('overBought')}</span>} {it.name}
             {it.matched_shopping_item_id && nameOf(it.matched_shopping_item_id) && <span className="tiny muted"> ↔ {nameOf(it.matched_shopping_item_id)}</span>}
           </span>
           <span className="small" style={{ flex: 'none' }}>{it.quantity > 1 ? '×' + it.quantity + ' ' : ''}S${(+it.line_total || 0).toFixed(2)}</span>
         </div>
       ))}
-      {data.missing_items?.length > 0 && (
-        <div className="tiny mt8" style={{ color: 'var(--amber-d, #b45309)' }}>
-          ⚠️ {t('missingOnReceipt')}: {data.missing_items.map((m) => m.name).join('、')}
+      {missingN > 0 && (
+        <div className="mt8" style={{ background: '#fef3c7', borderRadius: 8, padding: '6px 8px' }}>
+          <div className="tiny bold" style={{ color: '#b45309' }}>⚠️ {t('missedBuy')}（{t('missingOnReceipt')}）</div>
+          <div className="tiny" style={{ color: '#b45309', marginTop: 2 }}>
+            {data.missing_items.map((m) => pick(lang, m.name, m.name_en)).join('、')}
+          </div>
         </div>
       )}
     </div>
