@@ -1312,6 +1312,14 @@ api.post('/recipes/:id/favorite', (req, res) => {
   db.prepare('UPDATE Recipe SET favorite=? WHERE recipe_id=?').run(r.favorite?0:1, r.recipe_id);
   res.json({ favorite: r.favorite?0:1 });
 });
+// 喜欢程度打分：0–5 星（0=清除评分）
+api.post('/recipes/:id/rating', (req, res) => {
+  const r = db.prepare('SELECT * FROM Recipe WHERE recipe_id=?').get(req.params.id);
+  if (!owns(req, r)) return res.status(404).json({ error: 'not found' });
+  const rating = Math.max(0, Math.min(5, Math.round(+req.body.rating || 0)));
+  db.prepare('UPDATE Recipe SET rating=? WHERE recipe_id=?').run(rating, r.recipe_id);
+  res.json({ rating });
+});
 // 新建菜谱（含食材 + 步骤）
 api.post('/recipes', (req, res) => {
   const family = curFamily(req);
@@ -1385,9 +1393,12 @@ api.post('/recipes/:id/to-shopping', (req, res) => {
   const ings = db.prepare('SELECT * FROM RecipeIngredient WHERE recipe_id=?').all(r.recipe_id);
   const lid = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,status,creator_id) VALUES (?,?,?, 'to_buy', 1)`)
     .run(family.family_id, (r.name.split(' ')[0] || r.name) + ' 采购', defaultHelperId(family.family_id)).lastInsertRowid;
-  ings.forEach((ing) => db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,estimated_price,allow_substitute,urgency,status,source_recipe_id)
-    VALUES (?,?,?, '食材','食材',?, '🛒', ?, ?, 0, 1, 'normal', 'to_buy', ?)`)
-    .run(lid, ing.name, ing.name_en || '', guessFoodSub(ing.name), parseFloat(ing.quantity) || 1, ing.unit || '份', r.recipe_id));
+  ings.forEach((ing) => {
+    const lp = lastPurchase(family.family_id, ing.name, ing.name_en); // 同名食材历史价 → 预算
+    db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,estimated_price,budget_limit,allow_substitute,urgency,status,source_recipe_id)
+    VALUES (?,?,?, '食材','食材',?, '🛒', ?, ?, ?, ?, 1, 'normal', 'to_buy', ?)`)
+    .run(lid, ing.name, ing.name_en || '', guessFoodSub(ing.name), parseFloat(ing.quantity) || 1, ing.unit || '份', lp?.unit_price || 0, lp?.total || 0, r.recipe_id);
+  });
   notify(family.family_id, 'shopping', '新采购清单', '从菜谱「' + r.name + '」生成 ' + ings.length + ' 项食材', 'shopping', lid, 'maid');
   res.json(listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(lid)));
 });
@@ -1625,6 +1636,64 @@ function matchStatus(helperTotal, receiptTotal) {
   return Math.abs(receiptTotal - helperTotal) <= AMOUNT_TOLERANCE ? 'matched' : 'mismatch';
 }
 
+// ---- 采购历史归档（PurchaseRecord）----
+// 清单确认时快照已购商品；重复归档先删后插（幂等）。清单彻底删除后记录仍在，历史不丢
+function archiveList(listId) {
+  const l = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(listId);
+  if (!l) return;
+  const items = db.prepare("SELECT * FROM ShoppingItem WHERE shopping_list_id=? AND status IN ('bought','sub_approved')").all(listId);
+  const date = l.purchase_date || (l.confirmed_at || '').slice(0, 10) || todayYmd();
+  db.transaction(() => {
+    db.prepare('DELETE FROM PurchaseRecord WHERE shopping_list_id=?').run(listId);
+    const ins = db.prepare(`INSERT INTO PurchaseRecord (family_id,shopping_list_id,list_type,list_title,store_name,purchase_date,name,name_en,primary_category,secondary_category,quantity,unit,unit_price,total)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    for (const i of items) {
+      const isSub = i.status === 'sub_approved';
+      ins.run(l.family_id, listId, l.list_type || 'family', l.title, l.store_name || '', date,
+        isSub ? (i.sub_name || i.name) : i.name, i.name_en || '', i.primary_category || '其他', i.secondary_category || '',
+        i.actual_quantity ?? i.quantity ?? 1, i.unit || '', i.actual_unit_price ?? (isSub ? i.sub_price : null) ?? 0, i.actual_total || 0);
+    }
+  })();
+}
+// 启动时把已确认的历史清单补录进归档（无记录才补，幂等）
+for (const row of db.prepare("SELECT shopping_list_id FROM ShoppingList WHERE status IN ('confirmed','reimbursed')").all()) {
+  if (!db.prepare('SELECT 1 FROM PurchaseRecord WHERE shopping_list_id=? LIMIT 1').get(row.shopping_list_id)) archiveList(row.shopping_list_id);
+}
+// 同名商品最近一次购买记录（先精确匹配中/英文名，再模糊）
+function lastPurchase(familyId, name, nameEn) {
+  const n = String(name || '').trim(), ne = String(nameEn || '').trim();
+  if (!n && !ne) return null;
+  return db.prepare(`SELECT * FROM PurchaseRecord WHERE family_id=? AND (name=? COLLATE NOCASE OR (name_en<>'' AND name_en=? COLLATE NOCASE))
+      ORDER BY purchase_date DESC, record_id DESC LIMIT 1`).get(familyId, n || ne, ne || n)
+    || db.prepare(`SELECT * FROM PurchaseRecord WHERE family_id=? AND (name LIKE ? OR name_en LIKE ?)
+      ORDER BY purchase_date DESC, record_id DESC LIMIT 1`).get(familyId, '%' + (n || ne) + '%', '%' + (ne || n) + '%')
+    || null;
+}
+api.get('/purchase/last-price', (req, res) => {
+  const r = lastPurchase(famId(req), req.query.name, req.query.name_en);
+  res.json(r ? { found: true, name: r.name, name_en: r.name_en, unit_price: r.unit_price, total: r.total, quantity: r.quantity,
+    unit: r.unit, purchase_date: r.purchase_date, store_name: r.store_name, list_type: r.list_type } : { found: false });
+});
+// 账单 review：按月 × 清单类型（家庭/女佣） × 一级分类汇总
+api.get('/expense/review', (req, res) => {
+  const fid = famId(req);
+  const rows = db.prepare(`SELECT substr(purchase_date,1,7) AS month, COALESCE(list_type,'family') AS list_type, COALESCE(primary_category,'其他') AS category, SUM(total) AS amount
+    FROM PurchaseRecord WHERE family_id=? AND purchase_date>='2000' GROUP BY month, list_type, category`).all(fid);
+  const cnt = db.prepare(`SELECT substr(purchase_date,1,7) AS month, COALESCE(list_type,'family') AS list_type, COUNT(DISTINCT shopping_list_id) AS lists
+    FROM PurchaseRecord WHERE family_id=? AND purchase_date>='2000' GROUP BY month, list_type`).all(fid);
+  const months = {};
+  for (const r of rows) {
+    const m = months[r.month] || (months[r.month] = { month: r.month, total: 0, types: {} });
+    const t = m.types[r.list_type] || (m.types[r.list_type] = { list_type: r.list_type, total: 0, lists: 0, by_category: [] });
+    t.by_category.push({ category: r.category, amount: +r.amount.toFixed(2) });
+    t.total = +(t.total + r.amount).toFixed(2);
+    m.total = +(m.total + r.amount).toFixed(2);
+  }
+  for (const c of cnt) { if (months[c.month]?.types[c.list_type]) months[c.month].types[c.list_type].lists = c.lists; }
+  res.json({ months: Object.values(months).sort((a, b) => b.month.localeCompare(a.month))
+    .map((m) => ({ ...m, types: Object.values(m.types).map((t) => ({ ...t, by_category: t.by_category.sort((a, b) => b.amount - a.amount) })) })) });
+});
+
 // ---- 采购 ----
 function listWith(l) {
   l.items = db.prepare('SELECT * FROM ShoppingItem WHERE shopping_list_id=?').all(l.shopping_list_id);
@@ -1723,17 +1792,19 @@ api.post('/maid-requests/:id/review', (req, res) => {
   let itemId = null;
   if (action === 'to_list') {
     // 目标清单：指定的 > 最近一份待购清单 > 新建一份派给该女佣
+    // 女佣申请归入女佣类清单（与家庭采购分开展示/统计）
     let list = req.body.shopping_list_id
       ? db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=? AND family_id=? AND deleted_at IS NULL').get(req.body.shopping_list_id, famId(req))
-      : db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL AND status='to_buy' ORDER BY shopping_list_id DESC").get(famId(req));
+      : db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL AND status='to_buy' AND list_type='maid' ORDER BY shopping_list_id DESC").get(famId(req));
     if (!list) {
-      const lid = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,budget,store_name,status,creator_id) VALUES (?,?,?,0,'','to_buy',1)`)
+      const lid = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,budget,store_name,status,creator_id,list_type) VALUES (?,?,?,0,'','to_buy',1,'maid')`)
         .run(famId(req), '女佣食材申请 ' + r.week_start, r.maid_id).lastInsertRowid;
       list = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(lid);
     }
-    itemId = db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,status)
-      VALUES (?,?,?,'食材','食材','其他食材','🥬',?,?,'to_buy')`)
-      .run(list.shopping_list_id, r.name, r.name_en || '', r.quantity || 1, r.unit || '').lastInsertRowid;
+    const lp = lastPurchase(famId(req), r.name, r.name_en); // 同名商品历史价 → 预算
+    itemId = db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,estimated_price,budget_limit,status)
+      VALUES (?,?,?,'食材','食材','其他食材','🥬',?,?,?,?,'to_buy')`)
+      .run(list.shopping_list_id, r.name, r.name_en || '', r.quantity || 1, r.unit || '', lp?.unit_price || 0, lp?.total || 0).lastInsertRowid;
     notify(famId(req), 'shopping', 'Request added to shopping list: ' + r.name, `List "${list.title}"`, 'shopping', list.shopping_list_id, 'maid', r.maid_id);
   } else if (action === 'online') {
     notify(famId(req), 'shopping', 'Employer will buy online: ' + r.name, 'No need to buy offline', 'maid_request', r.request_id, 'maid', r.maid_id);
@@ -1755,11 +1826,11 @@ api.post('/shopping/:id/restore', (req, res) => {
 api.post('/shopping', (req, res) => {
   const family = curFamily(req);
   const b = req.body;
-  const r = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,budget,store_name,due_time,status,creator_id)
-    VALUES (@family_id,@title,@assignee_id,@budget,@store_name,@due_time,@status,@creator_id)`)
+  const r = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,budget,store_name,due_time,status,creator_id,list_type)
+    VALUES (@family_id,@title,@assignee_id,@budget,@store_name,@due_time,@status,@creator_id,@list_type)`)
     .run({ family_id: family.family_id, title: b.title || '采购清单', assignee_id: b.assignee_id || 2,
       budget: b.budget || 0, store_name: b.store_name || '', due_time: b.due_time || null,
-      status: b.status || 'to_buy', creator_id: 1 });
+      status: b.status || 'to_buy', creator_id: 1, list_type: b.list_type === 'maid' ? 'maid' : 'family' });
   const id = r.lastInsertRowid;
   if ((b.status || 'to_buy') !== 'draft') notify(family.family_id, 'shopping', '新采购清单：' + (b.title||''), '请查看采购清单', 'shopping', id, 'maid');
   res.json(listWith(db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(id)));
@@ -1794,6 +1865,11 @@ api.post('/shopping/:id/items', (req, res) => {
   if (!owns(req, l)) return res.status(404).json({ error: 'not found' });
   const b = req.body;
   const pc = b.primary_category || '食材';
+  // 未填价格/预算时按同名商品最近一次购买记录自动填（单价→预计价，小计→预算上限）
+  if (!(+b.estimated_price) && !(+b.budget_limit)) {
+    const lp = lastPurchase(famId(req), b.name, b.name_en);
+    if (lp) { b.estimated_price = lp.unit_price || 0; b.budget_limit = lp.total || 0; }
+  }
   // 女佣添加的商品需雇主确认后才进入待购（pending_review → to_buy）
   const isMaid = curUserRole(req) === 'maid';
   const r = db.prepare(`INSERT INTO ShoppingItem
@@ -1846,6 +1922,7 @@ api.post('/shopping/:id/transition', (req, res) => {
     const reimb = l.payment_method === '女佣垫付' ? 'to_reimburse' : (l.reimbursement_status || 'none');
     db.prepare("UPDATE ShoppingList SET status=?, employer_confirmed_total=?, confirmed_at=?, reimbursement_status=? WHERE shopping_list_id=?")
       .run(to, confirmed, now, reimb, l.shopping_list_id);
+    archiveList(l.shopping_list_id); // 确认后归档已购商品，供预算参考与账单 review
     notify(l.family_id,'shopping','采购已确认','雇主已确认账目 S$'+(+confirmed).toFixed(2),'shopping',l.shopping_list_id,'maid');
   } else if (to === 'reimbursed') {
     db.prepare("UPDATE ShoppingList SET reimbursement_status='reimbursed' WHERE shopping_list_id=?").run(l.shopping_list_id);

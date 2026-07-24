@@ -184,6 +184,7 @@ function buildServer(token) {
       budget: z.number().optional(),
       store_name: z.string().optional(),
       due_time: z.string().optional().describe('期望完成时间 ISO 字符串'),
+      list_type: z.enum(['family', 'maid']).optional().describe('清单类型：family=家庭采购（默认），maid=女佣食材'),
     },
   }, async (args) => asResult(await call(token, 'POST', '/shopping', args)));
 

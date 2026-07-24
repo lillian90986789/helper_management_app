@@ -85,6 +85,7 @@ function ShoppingOverview({ role }) {
     <>
       <div className="topbar"><h1>{t('shopping')}</h1>
         {role === 'employer' && <button className="iconbtn" onClick={toggleTrash} title={t('trashBin')} style={trash ? { color: 'var(--teal)' } : undefined}>🗑</button>}
+        {role === 'employer' && <button className="iconbtn" onClick={() => nav('/bill-review')} title={t('billReview')}>📒</button>}
         {role === 'employer' && <button className="iconbtn" onClick={() => nav('/expense')} title={t('monthlyExpense')}>📊</button>}
         {role === 'employer' && <button className="iconbtn" onClick={() => nav('/shopping-new')}>＋</button>}
       </div>
@@ -104,20 +105,35 @@ function ShoppingOverview({ role }) {
             ))}
           </div>
         )}
-        {!lists ? <Empty text="加载中…" /> : lists.map((l) => (
-          <div key={l.shopping_list_id} className="card tap" onClick={() => nav('/shopping-list/' + l.shopping_list_id)}>
-            <div className="spread">
-              <span className="bold">{l.title}</span>
-              <StatusBadge status={l.status} />
-            </div>
-            <div className="small muted mt4">📍 {l.store_name} · {l.assignee?.name} · ⏰ {fmtTime(l.due_time)}</div>
-            <div className="spread mt12">
-              <span className="small muted">{l.items.length} {t('items')}</span>
-              <span className="bold">{t('budget')} S${l.budget} · <span style={{ color: 'var(--teal)' }}>{t('actualTotal')} S${l.actual_total.toFixed(1)}</span></span>
-            </div>
-          </div>
-        ))}
+        {!lists ? <Empty text="加载中…" /> : <ListGroups lists={lists} t={t} nav={nav} />}
       </div>
+    </>
+  );
+}
+
+// 清单列表：家庭采购 / 女佣食材分组展示（无女佣类清单时不显示分组标题）
+function ListGroups({ lists, t, nav }) {
+  const fam = lists.filter((l) => (l.list_type || 'family') !== 'maid');
+  const maid = lists.filter((l) => l.list_type === 'maid');
+  const Card = ({ l }) => (
+    <div className="card tap" onClick={() => nav('/shopping-list/' + l.shopping_list_id)}>
+      <div className="spread">
+        <span className="bold">{l.title}</span>
+        <StatusBadge status={l.status} />
+      </div>
+      <div className="small muted mt4">📍 {l.store_name} · {l.assignee?.name} · ⏰ {fmtTime(l.due_time)}</div>
+      <div className="spread mt12">
+        <span className="small muted">{l.items.length} {t('items')}</span>
+        <span className="bold">{t('budget')} S${l.budget} · <span style={{ color: 'var(--teal)' }}>{t('actualTotal')} S${l.actual_total.toFixed(1)}</span></span>
+      </div>
+    </div>
+  );
+  if (!maid.length) return fam.map((l) => <Card key={l.shopping_list_id} l={l} />);
+  return (
+    <>
+      {fam.length > 0 && <><div className="section-title">🏠 {t('familyLists')}</div>{fam.map((l) => <Card key={l.shopping_list_id} l={l} />)}</>}
+      <div className="section-title">🥬 {t('maidLists')}</div>
+      {maid.map((l) => <Card key={l.shopping_list_id} l={l} />)}
     </>
   );
 }

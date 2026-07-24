@@ -24,6 +24,8 @@ export default function RecipeDetail() {
   if (!r) return <><TopBar title={t('recipes')} /><div className="empty">加载中…</div></>;
 
   const fav = async () => { await api.favorite(r.recipe_id); reload(); };
+  // 点星打分：再点当前分数 = 清除（0 星）
+  const rate = async (n) => { await api.rateRecipe(r.recipe_id, n === r.rating ? 0 : n); reload(); };
   const doDelete = async () => {
     try { await api.deleteRecipe(r.recipe_id); showToast(en ? 'Recipe deleted' : '菜谱已删除'); nav('/e/recipes', { replace: true }); }
     catch { showToast(en ? 'Delete failed' : '删除失败'); }
@@ -64,6 +66,13 @@ export default function RecipeDetail() {
             <span className="badge gray">📊 {t(r.difficulty)}</span>
           </div>
           {r.suitable_age && <div className="small muted mt8">👶 {lang==='en'?'Suitable age: ':'适合月龄：'}{r.suitable_age} · {r.notes}</div>}
+          {/* 喜欢程度打分 */}
+          <div className="row mt12" style={{ justifyContent: 'center', gap: 4, alignItems: 'center' }}>
+            <span className="tiny muted" style={{ marginRight: 4 }}>{t('likeLevel')}</span>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} className="iconbtn" style={{ fontSize: 22, padding: 2, color: n <= (r.rating || 0) ? 'var(--amber, #f59e0b)' : 'var(--line)' }} onClick={() => rate(n)}>★</button>
+            ))}
+          </div>
           <VideoButton url={r.video_url} />
         </div>
 

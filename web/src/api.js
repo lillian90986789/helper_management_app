@@ -138,6 +138,7 @@ export const api = {
   recipes: (type = 'all') => req('/recipes?type=' + type),
   recipe: (id) => req('/recipes/' + id),
   favorite: (id) => req(`/recipes/${id}/favorite`, { method: 'POST' }),
+  rateRecipe: (id, rating) => req(`/recipes/${id}/rating`, { method: 'POST', body: { rating } }),
   createRecipe: (body) => req('/recipes', { method: 'POST', body }),
   updateRecipe: (id, body) => req(`/recipes/${id}`, { method: 'PATCH', body }),
   deleteRecipe: (id) => req(`/recipes/${id}`, { method: 'DELETE' }),
@@ -169,6 +170,8 @@ export const api = {
   // 采购模块：分类 + 月度账目 + 小票识别
   categories: () => req('/categories'),
   monthlyExpense: (year, mon) => req(`/expense/monthly?year=${year}&month=${mon}`),
+  billReview: () => req('/expense/review'),
+  lastPrice: (name, nameEn) => req(`/purchase/last-price?name=${encodeURIComponent(name || '')}&name_en=${encodeURIComponent(nameEn || '')}`),
   scanReceipt: (listId, body) => req(`/shopping/${listId}/receipt-scan`, { method: 'POST', body }),
   saveFamilySettings: (body) => req('/family/settings', { method: 'POST', body }),
   notifications: (role) => req('/notifications?role=' + role),

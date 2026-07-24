@@ -9,6 +9,7 @@ export default function RecipeList({ cooking }) {
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const [type, setType] = useState('all');
+  const [q, setQ] = useState(''); // 菜名搜索（部分匹配，中英文均可）
   const { data: recipes } = useAsync(() => api.recipes('all'));
   const { data: meals } = useAsync(() => api.meals());
 
@@ -39,13 +40,18 @@ export default function RecipeList({ cooking }) {
     );
   }
 
-  const list = (recipes || []).filter((r) => type === 'all' || r.recipe_type === type);
+  const kw = q.trim().toLowerCase();
+  const list = (recipes || [])
+    .filter((r) => type === 'all' || r.recipe_type === type)
+    .filter((r) => !kw || (r.name || '').toLowerCase().includes(kw) || (r.name_en || '').toLowerCase().includes(kw))
+    .sort((a, b) => (b.rating || 0) - (a.rating || 0)); // 高分在前，未打分保持原顺序
   return (
     <>
       <div className="topbar"><h1>{t('recipes')}</h1>
         <button className="iconbtn" onClick={() => nav('/recipe-new')} title={lang === 'en' ? 'New recipe' : '新建菜谱'}>＋</button>
       </div>
       <div style={{ position: 'sticky', top: 61, background: 'var(--bg)', zIndex: 20, padding: '10px 16px 6px' }}>
+        <input className="input" style={{ marginBottom: 8 }} placeholder={'🔍 ' + t('searchRecipes')} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="chips">
           {[['all', t('all')], ['adult', t('adult')], ['baby', t('baby')]].map(([k, label]) => (
             <button key={k} className={'chip' + (type === k ? ' on' : '')} onClick={() => setType(k)}>{label}</button>
@@ -53,6 +59,7 @@ export default function RecipeList({ cooking }) {
         </div>
       </div>
       <div className="content" style={{ paddingTop: 8 }}>
+        {recipes && list.length === 0 && <Empty icon="🔍" text={t('noData')} />}
         {!recipes ? <Empty text="加载中…" /> : list.map((r) => (
           <div key={r.recipe_id} className="card tap" onClick={() => nav('/recipe/' + r.recipe_id)}>
             <div className="row">
@@ -60,7 +67,7 @@ export default function RecipeList({ cooking }) {
               <div className="grow">
                 <div className="spread">
                   <span className="bold">{pick(lang, r.name, r.name_en)}</span>
-                  <span>{r.favorite ? '⭐' : ''}</span>
+                  <span className="tiny">{r.favorite ? '⭐' : ''}{r.rating > 0 && <span style={{ color: 'var(--amber, #f59e0b)', marginLeft: 4 }}>{'★'.repeat(r.rating)}</span>}</span>
                 </div>
                 <div className="tiny muted mt4">
                   ⏱ {r.duration}{t('min')} · 🍽 {r.servings}{lang==='en'?'':'份'} · 🥗 {r.ingredients.length}{lang==='en'?' items':'种食材'}

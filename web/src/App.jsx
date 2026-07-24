@@ -28,6 +28,7 @@ import ShoppingItemNew from './pages/ShoppingItemNew.jsx';
 import ShoppingSettle from './pages/ShoppingSettle.jsx';
 import SubstituteReview from './pages/SubstituteReview.jsx';
 import MonthlyExpense from './pages/MonthlyExpense.jsx';
+import BillReview from './pages/BillReview.jsx';
 import Notifications from './pages/Notifications.jsx';
 import Members from './pages/Members.jsx';
 import Me from './pages/Me.jsx';
@@ -189,6 +190,7 @@ export default function App() {
               <Route path="/shopping-list/:id/settle" element={<ShoppingSettle />} />
               <Route path="/substitute/:itemId" element={<SubstituteReview />} />
               <Route path="/expense" element={<MonthlyExpense />} />
+              <Route path="/bill-review" element={<BillReview />} />
               <Route path="/members" element={<Members />} />
               <Route path="/notifications" element={<Notifications />} />
               <Route path="/subscribe" element={<Subscribe />} />

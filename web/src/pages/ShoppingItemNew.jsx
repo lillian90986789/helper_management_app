@@ -18,7 +18,20 @@ export default function ShoppingItemNew() {
   const empty = { name: '', primary_category: '食材', secondary_category: '肉类', image_url: '🛒', quantity: 1, unit: lang === 'en' ? 'pc' : '件',
     brand: '', specification: '', estimated_price: '', budget_limit: '', allow_substitute: true, urgency: 'normal', notes: '' };
   const [f, setF] = useState(empty);
+  const [lastBuy, setLastBuy] = useState(null); // 同名商品最近一次购买记录
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  // 输入商品名后查历史购买价，自动填预计价/预算（仅当两者都为空时）
+  const fetchLast = async () => {
+    const name = f.name.trim();
+    if (!name) return setLastBuy(null);
+    try {
+      const r = await api.lastPrice(name);
+      setLastBuy(r.found ? r : null);
+      if (r.found) setF((p) => (!p.estimated_price && !p.budget_limit)
+        ? { ...p, estimated_price: r.unit_price || '', budget_limit: r.total || '' } : p);
+    } catch { /* 忽略查询失败 */ }
+  };
 
   const save = async (again) => {
     if (!f.name.trim()) return showToast(lang === 'en' ? 'Enter item name' : '请填写商品名称');
@@ -28,7 +41,7 @@ export default function ShoppingItemNew() {
       quantity: +f.quantity || 1, allow_substitute: f.allow_substitute ? 1 : 0,
     });
     showToast(t('addItem') + ' ✓');
-    if (again) setF({ ...empty });
+    if (again) { setF({ ...empty }); setLastBuy(null); }
     else nav('/shopping-list/' + id, { replace: true });
   };
 
@@ -48,7 +61,10 @@ export default function ShoppingItemNew() {
         </div>
         <div className="field">
           <label>{t('itemName')} <span className="req">*</span></label>
-          <input className="input" value={f.name} placeholder={lang === 'en' ? 'e.g. Tomato' : '例如：番茄'} onChange={(e) => set('name', e.target.value)} />
+          <input className="input" value={f.name} placeholder={lang === 'en' ? 'e.g. Tomato' : '例如：番茄'} onChange={(e) => set('name', e.target.value)} onBlur={fetchLast} />
+          {lastBuy && <div className="tiny" style={{ color: 'var(--teal)', marginTop: 4 }}>
+            💡 {t('lastBought')} S${(+lastBuy.total || 0).toFixed(2)}{lastBuy.unit_price ? ` (S$${(+lastBuy.unit_price).toFixed(2)}/${lastBuy.unit || (lang === 'en' ? 'unit' : '单位')})` : ''} · {lastBuy.purchase_date}{lastBuy.store_name ? ' · ' + lastBuy.store_name : ''}
+          </div>}
         </div>
         <CategoryPicker cats={cats} primary={f.primary_category} secondary={f.secondary_category}
           onChange={(pc, sc) => setF((p) => ({ ...p, primary_category: pc, secondary_category: sc }))} />
