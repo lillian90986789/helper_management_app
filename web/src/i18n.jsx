@@ -67,6 +67,7 @@ const dict = {
     matchedItems: '已匹配', missedBuy: '漏买', overBought: '多买', autoFilledNote: '已自动回填实际数量与金额，漏买商品已标记缺货，可手动修改',
     billReview: '账单 Review', familyLists: '家庭采购', maidLists: '女佣食材', lastBought: '上次购买',
     searchRecipes: '搜索菜名…', likeLevel: '喜欢程度', nextWeekTag: '下周',
+    awaitingSettle: '等待女佣提交结算',
     confirmRead: '确认已阅读',
     // meal order
     mealOrder: '菜谱订单', mealDate: '用餐日期', mealType: '餐次', diners: '用餐人数', missingIng: '缺少食材', resultPhoto: '完成照片', maidNote: '女佣备注',
@@ -170,6 +171,7 @@ const dict = {
     matchedItems: 'Matched', missedBuy: 'Missed', overBought: 'Extra', autoFilledNote: 'Actual qty & amounts auto-filled; missed items marked out of stock — editable',
     billReview: 'Bill Review', familyLists: 'Family', maidLists: 'Maid groceries', lastBought: 'Last bought',
     searchRecipes: 'Search recipes…', likeLevel: 'Rating', nextWeekTag: 'Next week',
+    awaitingSettle: 'Waiting for helper to submit settlement',
     confirmRead: 'Mark as Read',
     mealOrder: 'Meal Order', mealDate: 'Date', mealType: 'Meal', diners: 'Diners', missingIng: 'Missing', resultPhoto: 'Result Photo', maidNote: 'Helper Note',
     received: 'Received', markMissing: 'Mark Missing', uploadResult: 'Upload Photo', cookDone: 'Done Cooking',

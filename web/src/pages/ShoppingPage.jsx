@@ -198,7 +198,7 @@ function ShoppingDetail() {
                       ? <ZoomImg src={it.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
                       : it.image_url}</div>
                     <div className="grow">
-                      <div className="bold">{pick(lang, it.name, it.name_en)} {it.urgency === 'urgent' && <span className="badge red tiny">{t('urgent')}</span>}</div>
+                      <div className="bold">{pick(lang, it.name, it.name_en)} {it.urgency === 'urgent' && <span className="badge red tiny">{t('urgent')}</span>}{!!it.is_extra && <span className="badge amber tiny">{t('extraItem')}</span>}</div>
                       <div className="tiny muted">{it.quantity}{it.unit}{it.brand ? ' · ' + it.brand : ''}{it.specification ? ' · ' + it.specification : ''}</div>
                       {it.actual_total != null && <div className="tiny" style={{ color: 'var(--teal)' }}>{t('actualTotal')} S${it.actual_total.toFixed(2)}</div>}
                       {it.status === 'sub_requested' && <div className="tiny" style={{ color: 'var(--amber)' }}>→ {it.sub_name} ({it.sub_reason})</div>}
@@ -315,6 +315,8 @@ function ShoppingDetail() {
               <button className="btn primary" style={{ flex: 2 }} onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'confirmed' }); showToast(t('confirmAccount') + ' ✓'); reload(); }}>✓ {t('confirmAccount')}</button>
             </> : l.status === 'confirmed' && l.reimbursement_status === 'to_reimburse'
               ? <button className="btn primary block" onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'reimbursed' }); showToast(t('markReimbursed') + ' ✓'); reload(); }}>💵 {t('markReimbursed')}</button>
+              : l.receipt_image && !['confirmed', 'reimbursed'].includes(l.status)
+              ? <div className="btn outline block" style={{ pointerEvents: 'none', opacity: 0.8 }}>⏳ {t('awaitingSettle')}</div>
               : <button className="btn outline block" onClick={() => nav('/e/shopping')}>{t('viewProgress')}</button>}
           </div>}
 

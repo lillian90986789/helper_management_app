@@ -114,7 +114,7 @@ export default function ShoppingSettle() {
               <div className="row">
                 <div className="thumb">{it.image_url}</div>
                 <div className="grow">
-                  <div className="bold">{pick(lang, it.name, it.name_en)}</div>
+                  <div className="bold">{pick(lang, it.name, it.name_en)}{!!it.is_extra && <span className="badge amber tiny" style={{ marginLeft: 4 }}>{t('extraItem')}</span>}</div>
                   <div className="tiny muted">{en ? 'Est. ' : '预计 '}S${(it.estimated_price||0).toFixed(2)} · {en ? 'Budget ' : '预算 '}S${it.budget_limit||'-'}</div>
                   {/* 分类快捷展示 + 编辑 */}
                   <button className="chip" style={{ marginTop: 6 }} onClick={() => setEditCat(editCat === it.shopping_item_id ? null : it.shopping_item_id)}>

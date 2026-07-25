@@ -443,6 +443,7 @@ addCol('DailyTask', 'is_rest_day_task', 'INTEGER DEFAULT 0'); // 是否为休息
 // ShoppingItem → 采购模块：两级分类（第 3 节）
 addCol('ShoppingItem', 'primary_category', "TEXT DEFAULT '其他'");   // 一级分类
 addCol('ShoppingItem', 'secondary_category', 'TEXT');                // 二级分类（食材必填）
+addCol('ShoppingItem', 'is_extra', 'INTEGER DEFAULT 0');             // 小票识别出的清单外多买（自动入账，重扫会重建）
 // ShoppingList → 采购模块：Receipt 金额核对（第 8 节）+ 报销（第 18 节）
 addCol('ShoppingList', 'purchase_date', 'TEXT');                     // 采购日期（YYYY-MM-DD）
 addCol('ShoppingList', 'receipt_total', 'REAL');                     // Receipt 识别/手填总金额

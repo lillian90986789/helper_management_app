@@ -1607,6 +1607,17 @@ api.post('/shopping/:id/receipt-scan', async (req, res) => {
         const it = view.items.find((x) => x.shopping_item_id === m.shopping_item_id);
         if (it && it.status === 'to_buy') db.prepare(`UPDATE ShoppingItem SET status='out_of_stock' WHERE shopping_item_id=?`).run(it.shopping_item_id);
       }
+      // 清单外多买：自动加为已购商品（is_extra=1），金额计入总额，否则金额核对必然不一致
+      db.prepare('DELETE FROM ShoppingItem WHERE shopping_list_id=? AND is_extra=1').run(l.shopping_list_id); // 重扫先清旧的自动项
+      for (const line of ocr.items) {
+        if (line.matched_shopping_item_id) continue;
+        const qty = +line.quantity || 1;
+        const total = +(+line.line_total || 0).toFixed(2);
+        db.prepare(`INSERT INTO ShoppingItem (shopping_list_id,name,name_en,category,primary_category,secondary_category,image_url,quantity,unit,status,actual_quantity,actual_unit_price,discount,actual_total,is_extra)
+          VALUES (?,?,?,'食材','食材','其他食材','🛒',?,?,'bought',?,?,0,?,1)`)
+          .run(l.shopping_list_id, line.name, line.name, qty, '', qty, +(total / qty).toFixed(2), total);
+        appliedCount++;
+      }
     })();
   }
   ocr.auto_review = { applied: appliedCount, matched: matchedIds.size, missing: ocr.missing_items.length, extra: ocr.extra_count };
