@@ -1740,7 +1740,13 @@ function purgeOldTrash(familyId) {
 }
 api.get('/shopping', async (req, res) => {
   purgeOldTrash(famId(req));
-  const ls = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL ORDER BY shopping_list_id DESC').all(famId(req)).map(listWith);
+  let ls = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL ORDER BY shopping_list_id DESC').all(famId(req));
+  // 女佣端只看：最近一张家庭清单 + 全部女佣类清单（历史家庭清单只在雇主端展示，避免干扰）
+  if (curUserRole(req) === 'maid') {
+    const latestFam = ls.find((l) => (l.list_type || 'family') !== 'maid');
+    ls = ls.filter((l) => l.list_type === 'maid' || l === latestFam);
+  }
+  ls = ls.map(listWith);
   await localizeLists(req, ls); res.json(ls);
 });
 // 回收站：已删除的清单（30 天内），需在 /shopping/:id 之前注册以免被吞
