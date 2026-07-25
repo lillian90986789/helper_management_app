@@ -44,6 +44,7 @@ function MaidRequestCard({ role, t, lang, showToast, onListsChanged }) {
           <div style={{ minWidth: 0 }}>
             <span className="small bold">{pick(lang, r.name, r.name_en)}</span>
             <span className="tiny muted"> ×{r.quantity}{r.unit || ''}</span>
+            {r.week_start === mr.next_week_start && <span className="badge blue tiny" style={{ marginLeft: 4 }}>{t('nextWeekTag')}</span>}
           </div>
           {r.status === 'pending' && role === 'employer'
             ? <div className="row" style={{ gap: 4, flex: 'none' }}>

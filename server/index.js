@@ -1758,9 +1758,12 @@ api.get('/maid-requests', (req, res) => {
   mon.setDate(mon.getDate() + (parseInt(req.query.offset, 10) || 0) * 7);
   const weekStart = ymd(mon);
   const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
-  let rows = db.prepare('SELECT * FROM MaidRequest WHERE family_id=? AND week_start=? ORDER BY request_id').all(famId(req), weekStart);
+  const nextMon = new Date(mon); nextMon.setDate(mon.getDate() + 7);
+  // 同时返回本周+下周：周五后提交的申请自动归入下周，若只查本周，周末双方都看不到刚提交的申请
+  let rows = db.prepare('SELECT * FROM MaidRequest WHERE family_id=? AND week_start IN (?,?) ORDER BY week_start, request_id')
+    .all(famId(req), weekStart, ymd(nextMon));
   if (curUserRole(req) === 'maid') rows = rows.filter((r) => r.maid_id === req.userId);
-  res.json({ week_start: weekStart, deadline: ymd(fri), requests: rows });
+  res.json({ week_start: weekStart, next_week_start: ymd(nextMon), deadline: ymd(fri), requests: rows });
 });
 // 女佣提交申请（归入当前周；周五后提交自动归入下周）
 api.post('/maid-requests', (req, res) => {
