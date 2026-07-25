@@ -1950,12 +1950,15 @@ api.patch('/items/:id', (req, res) => {
   // 食材必须有二级分类，否则二级留空；一级不填默认「其他」
   const pc = b.primary_category ?? it.primary_category ?? '其他';
   const sc = b.secondary_category !== undefined ? b.secondary_category : it.secondary_category;
+  // 改了中文名但没给新英文名 → 清空旧 name_en，让女佣端英文界面重新翻译（与菜谱改名逻辑一致）
+  const newName = b.name !== undefined && String(b.name).trim() ? String(b.name).trim() : null;
+  const nameEn = b.name_en ?? (newName && newName !== it.name ? '' : null);
   db.prepare(`UPDATE ShoppingItem SET status=COALESCE(@status,status), actual_quantity=@aq, actual_unit_price=@ap, discount=@disc, actual_total=@total,
-      primary_category=@pc, secondary_category=@sc, name=COALESCE(@name,name),
+      primary_category=@pc, secondary_category=@sc, name=COALESCE(@name,name), name_en=COALESCE(@name_en,name_en),
       quantity=COALESCE(@quantity,quantity), unit=COALESCE(@unit,unit), specification=COALESCE(@specification,specification),
       brand=COALESCE(@brand,brand), image_url=COALESCE(@image_url,image_url), estimated_price=COALESCE(@estimated_price,estimated_price),
       notes=COALESCE(@notes,notes) WHERE shopping_item_id=@id`)
-    .run({ status:b.status??null, aq, ap, disc, total, pc, sc: pc==='食材' ? (sc||null) : null, name: b.name??null,
+    .run({ status:b.status??null, aq, ap, disc, total, pc, sc: pc==='食材' ? (sc||null) : null, name: newName, name_en: nameEn,
       quantity: b.quantity??null, unit: b.unit??null, specification: b.specification??null, brand: b.brand??null,
       image_url: b.image_url??null, estimated_price: b.estimated_price??null, notes: b.notes??null, id:it.shopping_item_id });
   res.json(db.prepare('SELECT * FROM ShoppingItem WHERE shopping_item_id=?').get(it.shopping_item_id));

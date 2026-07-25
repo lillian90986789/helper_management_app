@@ -151,9 +151,10 @@ function ShoppingDetail() {
 
   const mark = async (item, status) => { await api.patchItem(item.shopping_item_id, { status }); showToast('✓'); reload(); };
   const del = async (item) => { await api.deleteItem(item.shopping_item_id); showToast(lang === 'en' ? 'Removed' : '已删除'); reload(); };
-  const openEdit = (it) => setEdit({ id: it.shopping_item_id, quantity: it.quantity ?? '', unit: it.unit || '', specification: it.specification || '', image_url: isImgAvatar(it.image_url) ? it.image_url : '' });
+  const openEdit = (it) => setEdit({ id: it.shopping_item_id, name: it.name || '', quantity: it.quantity ?? '', unit: it.unit || '', specification: it.specification || '', image_url: isImgAvatar(it.image_url) ? it.image_url : '' });
   const saveEdit = async () => {
-    await api.patchItem(edit.id, { quantity: edit.quantity === '' ? undefined : +edit.quantity, unit: edit.unit, specification: edit.specification, image_url: edit.image_url || undefined });
+    if (!edit.name.trim()) return showToast(lang === 'en' ? 'Enter item name' : '请填写商品名称');
+    await api.patchItem(edit.id, { name: edit.name.trim(), quantity: edit.quantity === '' ? undefined : +edit.quantity, unit: edit.unit, specification: edit.specification, image_url: edit.image_url || undefined });
     setEdit(null); showToast('✓'); reload();
   };
   const onEditImage = async (e) => {
@@ -215,14 +216,16 @@ function ShoppingDetail() {
                       <button className="btn sm primary" onClick={async () => { await api.reviewItem(it.shopping_item_id, true); showToast('✓'); reload(); }}>✓ {t('approve')}</button>
                       <button className="btn sm outline" onClick={async () => { await api.reviewItem(it.shopping_item_id, false); showToast(t('reject') + ' ✓'); reload(); }}>{t('reject')}</button>
                     </div>}
-                    {role === 'employer' && it.status === 'to_buy' && <>
+                    {/* 编辑（名称/照片/数量等）：除待审核、替代申请中外任意状态可改；删除仅限待购 */}
+                    {role === 'employer' && !['pending_review', 'sub_requested'].includes(it.status) && <>
                       <button className="iconbtn" onClick={() => edit?.id === it.shopping_item_id ? setEdit(null) : openEdit(it)}>✏️</button>
-                      <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => del(it)}>✕</button>
+                      {it.status === 'to_buy' && <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => del(it)}>✕</button>}
                     </>}
                   </div>
                   {/* 行内编辑：数量 / 单位 / 规格 / 参考图 */}
                   {edit?.id === it.shopping_item_id && (
                     <div style={{ background: 'var(--bg)', borderRadius: 10, padding: 10, margin: '4px 0 8px' }}>
+                      <input className="input" style={{ marginBottom: 8 }} placeholder={t('itemName')} value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
                       <div className="row" style={{ gap: 6 }}>
                         <input className="input" type="number" style={{ flex: 1 }} placeholder={t('itemQty')} value={edit.quantity} onChange={(e) => setEdit({ ...edit, quantity: e.target.value })} />
                         <input className="input" style={{ flex: 1 }} placeholder={t('itemUnit')} value={edit.unit} onChange={(e) => setEdit({ ...edit, unit: e.target.value })} />
