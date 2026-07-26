@@ -312,14 +312,17 @@ export function WeeklyMenu({ days, lang, t, onOpen, onDelete, weekOffset = 0, on
   const todayIdx = days.findIndex((d) => d.isToday);
   const [idx, setIdx] = useState(todayIdx >= 0 ? todayIdx : 0);
   const day = days[idx];
-  const touchX = useRef(null);
-  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
+  const touch = useRef(null);
+  const onTouchStart = (e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
   const onTouchEnd = (e) => {
-    if (touchX.current == null) return;
-    const dx = e.changedTouches[0].clientX - touchX.current;
-    touchX.current = null;
-    if (dx < -40 && idx < 6) setIdx(idx + 1);
-    else if (dx > 40 && idx > 0) setIdx(idx - 1);
+    if (!touch.current) return;
+    const dx = e.changedTouches[0].clientX - touch.current.x;
+    const dy = e.changedTouches[0].clientY - touch.current.y;
+    touch.current = null;
+    // 只认「明显横向」的滑动：垂直滚动或斜滑（横向不足纵向 1.5 倍）不切天，避免下滑误跳前后天
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0 && idx < 6) setIdx(idx + 1);
+    else if (dx > 0 && idx > 0) setIdx(idx - 1);
   };
   const labels = [t('monS'), t('tueS'), t('wedS'), t('thuS'), t('friS'), t('satS'), t('sunS')];
   const weekLabel = weekOffset === 0 ? t('thisWeek') : weekOffset === 1 ? t('nextWeek') : `${days[0].date.slice(5)} ~ ${days[6].date.slice(5)}`;
