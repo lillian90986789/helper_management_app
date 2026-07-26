@@ -1573,6 +1573,11 @@ api.post('/shopping/:id/receipt-scan', async (req, res) => {
     ocr = { source: 'mock', store_name: l.store_name || 'FairPrice', purchase_date: todayYmd(), currency: 'SGD',
       subtotal: +sub.toFixed(2), tax, total: +(sub + tax).toFixed(2), items: [] };
   }
+  // 校验 AI 返回的匹配 id 必须真实存在于当前清单（防幻觉 id / 商品已被删），无效的转为清单外
+  const validIds = new Set(listForMatch.map((i) => i.shopping_item_id));
+  for (const line of (ocr.items || [])) {
+    if (line.matched_shopping_item_id && !validIds.has(line.matched_shopping_item_id)) line.matched_shopping_item_id = null;
+  }
   // 逐项比对：小票行无匹配 = 清单外多买；清单商品未出现在小票 = 漏买
   const matchedIds = new Set((ocr.items || []).map((i) => i.matched_shopping_item_id).filter(Boolean));
   const missing = ocr.items?.length ? listForMatch.filter((i) => !matchedIds.has(i.shopping_item_id)) : [];
