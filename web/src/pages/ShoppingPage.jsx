@@ -308,7 +308,7 @@ function ShoppingDetail() {
 
       {/* 底部主操作 */}
       {role === 'maid'
-        ? <div className="actionbar"><button className="btn primary block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/settle')}>💰 {t('enterPrice')} · {t('settle')}</button></div>
+        ? <div className="actionbar"><button className="btn primary block" onClick={() => nav('/shopping-list/' + l.shopping_list_id + '/settle')}>📷 {t('uploadAndSubmit')}</button></div>
         : <div className="actionbar">
             {l.status === 'pending_confirm' ? <>
               <button className="btn danger" onClick={async () => { await api.shoppingTransition(l.shopping_list_id, { to: 'returned' }); showToast(t('returnEdit') + ' ✓'); reload(); }}>↩ {t('returnEdit')}</button>

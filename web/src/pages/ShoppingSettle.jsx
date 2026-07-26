@@ -7,12 +7,16 @@ import { useApp } from '../App.jsx';
 
 const TOL = 0.05; // 允许误差 ±0.05（第 8.3 节）
 
+// 结算页两种模式：
+// simple（默认）——拍小票 → 自动识别回填 → 核对 → 提交，女佣三步完成
+// detail ——逐项改数量/单价/分类的完整编辑器，需要时从「手动调整」进入
 export default function ShoppingSettle() {
   const { id } = useParams();
   const { t, lang } = useI18n();
   const en = lang === 'en';
   const nav = useNavigate();
   const { showToast } = useApp();
+  const [mode, setMode] = useState('simple');
   const [list, setList] = useState(null);
   const [cats, setCats] = useState(null);
   const [rows, setRows] = useState({});
@@ -22,7 +26,7 @@ export default function ShoppingSettle() {
   const [reason, setReason] = useState('');
   const [payment, setPayment] = useState('雇主现金');
   const [editCat, setEditCat] = useState(null);           // 正在编辑分类的 itemId
-  const [scanInfo, setScanInfo] = useState(null);         // OCR 结果 {source, store_name, purchase_date, tax}
+  const [scanInfo, setScanInfo] = useState(null);         // OCR 结果 {source, store_name, purchase_date, tax, auto_review}
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => { api.categories().then(setCats); }, []);
@@ -47,7 +51,7 @@ export default function ShoppingSettle() {
 
   const setRow = (iid, k, v) => setRows((p) => ({ ...p, [iid]: { ...p[iid], [k]: v } }));
   const lineTotal = (iid) => { const r = rows[iid]; if (!r || r.oos) return 0; return Math.max(0, (+r.qty || 0) * (+r.price || 0) - (+r.discount || 0)); };
-  // 商品小计 → +9%消费税 → +其他费用 = 录入总额
+  // 商品小计 → +消费税 → +其他费用 = 录入总额
   const subtotal = +list.items.reduce((s, it) => s + lineTotal(it.shopping_item_id), 0).toFixed(2);
   const gstAmt = +(subtotal * GST).toFixed(2);
   const grand = +(subtotal + gstAmt + (+otherFee || 0)).toFixed(2);
@@ -58,7 +62,7 @@ export default function ShoppingSettle() {
   const matchStatus = rt == null ? 'unrecognized' : (Math.abs(rt - grand) <= TOL ? 'matched' : 'mismatch');
   const diff = rt == null ? 0 : +(rt - grand).toFixed(2);
 
-  // 真实 OCR：上传图片 → 后端 Claude 识别 → 回填 receipt 总额/商店/日期
+  // 真实 OCR：上传图片 → 后端 Claude 识别 → 自动匹配回填商品 → 重取清单展示
   const onFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setScanning(true);
@@ -66,7 +70,7 @@ export default function ShoppingSettle() {
       const dataUrl = await new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = err; fr.readAsDataURL(file); });
       const r = await api.scanReceipt(list.shopping_list_id, { image_base64: dataUrl, media_type: file.type });
       setScanInfo(r);
-      // 自动匹配已在后端回填商品实际数量/单价（漏买标缺货），重取清单让各行显示回填结果
+      // 自动匹配已在后端回填商品实际数量/单价（漏买标缺货、多买自动入账），重取清单让各行显示回填结果
       await load();
       setReceipt(r.file_url); setReceiptTotal(r.total != null ? r.total : '');
       const ar = r.auto_review;
@@ -103,9 +107,88 @@ export default function ShoppingSettle() {
   const payMethods = t('payMethods').split('|');
   const payMethodsZh = '雇主现金|雇主银行卡|雇主二维码付款|女佣垫付|线上支付|其他'.split('|');
 
+  // 小票卡片（两种模式共用）：图 + 识别信息 + 逐项比对
+  const receiptCard = receipt && (
+    <div className="card">
+      <div className="row">
+        {isImg(receipt)
+          ? <img src={receipt} alt="receipt" style={{ width: 72, height: 96, objectFit: 'cover', borderRadius: 10, flex: 'none' }} />
+          : <div className="thumb lg">{receipt}</div>}
+        <div className="grow">
+          <div className="bold small">{t('receiptUploaded')} ✓ {scanInfo && <span className="badge teal tiny">{scanInfo.source === 'claude' ? (en ? 'Claude OCR' : 'Claude 识别') : (en ? 'Demo' : '模拟')}</span>}</div>
+          {scanInfo?.store_name && <div className="tiny muted mt4">🏬 {scanInfo.store_name}{scanInfo.purchase_date ? ' · ' + scanInfo.purchase_date : ''}</div>}
+          <div className="bold mt8" style={{ fontSize: 20, color: 'var(--teal)' }}>{rt != null ? 'S$' + rt.toFixed(2) : '—'}</div>
+        </div>
+        <button className="btn sm outline" onClick={() => { setReceipt(''); setReceiptTotal(''); setScanInfo(null); }}>{t('reupload')}</button>
+      </div>
+      <ReceiptCompare data={scanInfo || list.receipt_items} listItems={list?.items} lang={lang} t={t} />
+    </div>
+  );
+
+  // 核对结果横幅 + 差异原因（两种模式共用）
+  const checkBlock = (
+    <div className="card">
+      <div className="spread"><span className="muted">{t('helperTotal')}</span><span className="bold">S${grand.toFixed(2)}</span></div>
+      <div className="spread mt8"><span className="muted">{t('receiptTotal')}</span><span>{rt == null ? '—' : 'S$' + rt.toFixed(2)}</span></div>
+      {rt != null && matchStatus === 'mismatch' && <div className="spread mt8"><span className="muted">{t('diff')}</span><span style={{ color: 'var(--red)' }}>{diff >= 0 ? '+' : ''}{diff.toFixed(2)}</span></div>}
+      <div style={{ marginTop: 10, padding: 12, borderRadius: 12, fontSize: 13, background: matchStatus==='matched' ? '#dcfce7' : matchStatus==='mismatch' ? '#fee2e2' : '#f1f5f9', color: matchStatus==='matched' ? '#166534' : matchStatus==='mismatch' ? '#b91c1c' : '#475569' }}>
+        {matchStatus === 'matched' ? '✅ ' + t('amtMatched') : matchStatus === 'mismatch' ? '⚠️ ' + t('amtMismatch') + '（' + (en ? 'diff ' : '差额 ') + Math.abs(diff).toFixed(2) + '）' : 'ℹ️ ' + t('amtUnrecognized')}
+      </div>
+      {matchStatus === 'mismatch' && (
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>{t('diffReason')} <span className="req">*</span></label>
+          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {reasons.map((rz) => <button key={rz} className={'chip' + (reason === rz ? ' on' : '')} onClick={() => setReason(rz)}>{rz}</button>)}
+          </div>
+        </div>
+      )}
+      {over && <div className="tiny" style={{ color: 'var(--red)', marginTop: 8 }}>⚠️ {en ? 'Over budget S$' + list.budget : '超出预算 S$' + list.budget}</div>}
+    </div>
+  );
+
+  // 付款方式（两种模式共用）
+  const paymentBlock = (
+    <div className="field">
+      <label>{t('paymentMethod')}</label>
+      <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+        {payMethods.map((pm, i) => <button key={pm} className={'chip' + (payment === payMethodsZh[i] ? ' on' : '')} onClick={() => setPayment(payMethodsZh[i])}>{pm}</button>)}
+      </div>
+      {payment === '女佣垫付' && <div className="tiny muted" style={{ marginTop: 6 }}>💡 {en ? 'Will enter "to reimburse" after confirmation' : '确认后自动进入「待报销」'}</div>}
+    </div>
+  );
+
+  // ---- 简洁模式：上传 → 自动核对 → 付款方式 → 提交 ----
+  if (mode === 'simple') {
+    return (
+      <>
+        <TopBar title={t('settle')} />
+        <div className="content">
+          {!receipt
+            ? <div className="card" style={{ textAlign: 'center', padding: 24 }}>
+                <label className="uploadbox" style={{ cursor: 'pointer', display: 'block', padding: '28px 12px', fontSize: 16 }}>
+                  {scanning ? '⏳ ' + (en ? 'Recognizing…' : '识别中…') : '📷 ' + t('uploadAndSubmit')}
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={onFile} disabled={scanning} />
+                </label>
+                <div className="tiny muted mt8">{t('scanHint')}</div>
+              </div>
+            : <>
+                {receiptCard}
+                {checkBlock}
+                {paymentBlock}
+              </>}
+        </div>
+        <div className="actionbar">
+          <button className="btn outline" onClick={() => setMode('detail')}>✏️ {t('adjustManually')}</button>
+          <button className="btn primary" style={{ flex: 2 }} onClick={submit} disabled={scanning}>{t('submitToEmployer')}{receipt ? ' · S$' + grand.toFixed(2) : ''}</button>
+        </div>
+      </>
+    );
+  }
+
+  // ---- 手动调整模式：逐项编辑（原完整表单） ----
   return (
     <>
-      <TopBar title={t('settle')} />
+      <TopBar title={t('settle')} right={<button className="btn sm outline" onClick={() => setMode('simple')}>{t('simpleView')}</button>} />
       <div className="content">
         {list.items.map((it) => {
           const r = rows[it.shopping_item_id] || {};
@@ -150,7 +233,7 @@ export default function ShoppingSettle() {
           </div>
         </div>
 
-        {/* 金额汇总：商品小计 + 9% 消费税 + 其他费用 */}
+        {/* 金额汇总：商品小计 + 消费税 + 其他费用 */}
         <div className="card">
           <div className="spread"><span className="muted">{t('itemsSubtotal')}</span><span>S${subtotal.toFixed(2)}</span></div>
           <div className="spread mt8"><span className="muted">{t('gst')}（{Math.round(GST*100)}%）</span><span>+ S${gstAmt.toFixed(2)}</span></div>
@@ -162,23 +245,15 @@ export default function ShoppingSettle() {
         {/* 小票上传 + Claude 识别 */}
         <div className="section-title">🧾 {en ? 'Receipt' : '小票'}</div>
         {receipt
-          ? <div className="card">
-              <div className="row">
-                {isImg(receipt)
-                  ? <img src={receipt} alt="receipt" style={{ width: 72, height: 96, objectFit: 'cover', borderRadius: 10, flex: 'none' }} />
-                  : <div className="thumb lg">{receipt}</div>}
-                <div className="grow">
-                  <div className="bold small">{t('receiptUploaded')} ✓ {scanInfo && <span className="badge teal tiny">{scanInfo.source === 'claude' ? (en ? 'Claude OCR' : 'Claude 识别') : (en ? 'Demo' : '模拟')}</span>}</div>
-                  {scanInfo?.store_name && <div className="tiny muted mt4">🏬 {scanInfo.store_name}{scanInfo.purchase_date ? ' · ' + scanInfo.purchase_date : ''}{scanInfo.tax != null ? ' · GST S$' + (+scanInfo.tax).toFixed(2) : ''}</div>}
-                  <div className="field" style={{ margin: '8px 0 0' }}>
-                    <label>{t('receiptTotal')} (S$)</label>
-                    <input className="input" type="number" step="0.01" value={receiptTotal} placeholder={t('enterReceiptTotal')} onChange={(e) => setReceiptTotal(e.target.value)} />
-                  </div>
+          ? <>
+              {receiptCard}
+              <div className="card">
+                <div className="field" style={{ margin: 0 }}>
+                  <label>{t('receiptTotal')} (S$)</label>
+                  <input className="input" type="number" step="0.01" value={receiptTotal} placeholder={t('enterReceiptTotal')} onChange={(e) => setReceiptTotal(e.target.value)} />
                 </div>
-                <button className="btn sm outline" onClick={() => { setReceipt(''); setReceiptTotal(''); setScanInfo(null); }}>{t('cancel')}</button>
               </div>
-              <ReceiptCompare data={scanInfo} listItems={list?.items} lang={lang} t={t} />
-            </div>
+            </>
           : <div className="card">
               <label className="uploadbox" style={{ cursor: 'pointer', display: 'block' }}>
                 {scanning ? '⏳ ' + (en ? 'Recognizing…' : '识别中…') : '📷 ' + (en ? 'Upload receipt (auto OCR)' : '上传小票（自动识别）')}
@@ -187,33 +262,8 @@ export default function ShoppingSettle() {
               <button className="btn sm outline block mt12" onClick={mockScan}>✨ {t('scanReceipt')}</button>
             </div>}
 
-        {/* 金额核对结果（第 9/10/11 节） */}
-        <div className="card">
-          <div className="spread"><span className="muted">{t('helperTotal')}（{en ? 'incl. GST' : '含税'}）</span><span className="bold">S${grand.toFixed(2)}</span></div>
-          <div className="spread mt8"><span className="muted">{t('receiptTotal')}</span><span>{rt == null ? '—' : 'S$' + rt.toFixed(2)}</span></div>
-          {rt != null && <div className="spread mt8"><span className="muted">{t('diff')}</span><span style={{ color: Math.abs(diff) <= TOL ? 'var(--green)' : 'var(--red)' }}>{diff >= 0 ? '+' : ''}{diff.toFixed(2)}</span></div>}
-          <div style={{ marginTop: 10, padding: 12, borderRadius: 12, fontSize: 13, background: matchStatus==='matched' ? '#dcfce7' : matchStatus==='mismatch' ? '#fee2e2' : '#f1f5f9', color: matchStatus==='matched' ? '#166534' : matchStatus==='mismatch' ? '#b91c1c' : '#475569' }}>
-            {matchStatus === 'matched' ? '✅ ' + t('amtMatched') : matchStatus === 'mismatch' ? '⚠️ ' + t('amtMismatch') + '（' + (en ? 'diff ' : '差额 ') + Math.abs(diff).toFixed(2) + '）' : 'ℹ️ ' + t('amtUnrecognized')}
-          </div>
-          {matchStatus === 'mismatch' && (
-            <div className="field" style={{ marginTop: 10 }}>
-              <label>{t('diffReason')} <span className="req">*</span></label>
-              <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
-                {reasons.map((rz) => <button key={rz} className={'chip' + (reason === rz ? ' on' : '')} onClick={() => setReason(rz)}>{rz}</button>)}
-              </div>
-            </div>
-          )}
-          {over && <div className="tiny" style={{ color: 'var(--red)', marginTop: 8 }}>⚠️ {en ? 'Over budget S$' + list.budget : '超出预算 S$' + list.budget}</div>}
-        </div>
-
-        {/* 付款方式（第 18.1 节） */}
-        <div className="field">
-          <label>{t('paymentMethod')}</label>
-          <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
-            {payMethods.map((pm, i) => <button key={pm} className={'chip' + (payment === payMethodsZh[i] ? ' on' : '')} onClick={() => setPayment(payMethodsZh[i])}>{pm}</button>)}
-          </div>
-          {payment === '女佣垫付' && <div className="tiny muted" style={{ marginTop: 6 }}>💡 {en ? 'Will enter "to reimburse" after confirmation' : '确认后自动进入「待报销」'}</div>}
-        </div>
+        {checkBlock}
+        {paymentBlock}
       </div>
 
       <div className="actionbar">
