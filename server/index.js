@@ -1741,10 +1741,12 @@ function purgeOldTrash(familyId) {
 api.get('/shopping', async (req, res) => {
   purgeOldTrash(famId(req));
   let ls = db.prepare('SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL ORDER BY shopping_list_id DESC').all(famId(req));
-  // 女佣端只看：最近一张家庭清单 + 全部女佣类清单（历史家庭清单只在雇主端展示，避免干扰）
+  // 女佣端只看：未采购完成的家庭清单（待购/采购中等，且指派给女佣） + 全部女佣类清单
+  // 已提交待确认/已确认的家庭清单（含雇主自购单）不展示，避免干扰
   if (curUserRole(req) === 'maid') {
-    const latestFam = ls.find((l) => (l.list_type || 'family') !== 'maid');
-    ls = ls.filter((l) => l.list_type === 'maid' || l === latestFam);
+    const active = new Set(['to_buy', 'buying', 'partial', 'sub_pending', 'to_settle']);
+    const employerIds = new Set(db.prepare("SELECT user_id FROM User WHERE role='employer'").all().map((u) => u.user_id));
+    ls = ls.filter((l) => l.list_type === 'maid' || (active.has(l.status) && !employerIds.has(l.assignee_id)));
   }
   ls = ls.map(listWith);
   await localizeLists(req, ls); res.json(ls);
