@@ -61,7 +61,7 @@ export default function TaskDetail() {
 
         {task.description && <>
           <div className="section-title">📝 {t('taskInfo')}</div>
-          <div className="card"><div style={{ lineHeight: 1.7 }}>{task.description}</div></div>
+          <div className="card"><div style={{ lineHeight: 1.7, whiteSpace: 'pre-line' }}>{task.description}</div></div>
         </>}
 
         {/* 子任务 */}

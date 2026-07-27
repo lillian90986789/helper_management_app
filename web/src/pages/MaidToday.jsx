@@ -122,7 +122,7 @@ export default function MaidToday() {
             <div className="small muted mt4">
               {next.area && (pick(lang, next.area.name, next.area.name_en))} · ⏳ {next.estimated_duration}{t('min')}
             </div>
-            {next.description && <div className="small mt8" style={{ color: 'var(--ink-2)' }}>{next.description}</div>}
+            {next.description && <div className="small mt8" style={{ color: 'var(--ink-2)', whiteSpace: 'pre-line' }}>{next.description}</div>}
             <div className="btn-row mt12">
               <button className="btn outline" onClick={() => nav('/task/' + next.task_id)}>{t('viewDetail')}</button>
               <button className="btn primary" onClick={startNext}>▶ {t('startTask')}</button>
