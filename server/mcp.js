@@ -157,6 +157,22 @@ function buildServer(token) {
     },
   }, async ({ recipe_id, ...rest }) => asResult(await call(token, 'POST', `/recipes/${recipe_id}/to-meal`, rest)));
 
+  server.registerTool('update_meal', {
+    description: '修改菜单中的菜谱订单（换日期/餐次/份数/备注）。只传要改的字段；meal_order_id 从 get_today_meals / get_week_meals 获取',
+    inputSchema: {
+      meal_order_id: z.number(),
+      meal_date: z.string().optional().describe('用餐日期 YYYY-MM-DD'),
+      meal_type: z.enum(['breakfast', 'lunch', 'dinner']).optional(),
+      servings: z.number().optional(),
+      notes: z.string().optional().describe('给女佣的当次备注；传空字符串可清除'),
+    },
+  }, async ({ meal_order_id, ...rest }) => asResult(await call(token, 'PATCH', `/meals/${meal_order_id}`, rest)));
+
+  server.registerTool('delete_meal', {
+    description: '从菜单中删除一个菜谱订单（取消某天某餐的安排）。meal_order_id 从 get_today_meals / get_week_meals 获取',
+    inputSchema: { meal_order_id: z.number() },
+  }, async ({ meal_order_id }) => asResult(await call(token, 'DELETE', `/meals/${meal_order_id}`)));
+
   server.registerTool('get_today_meals', {
     description: '查看今日菜单（已安排的菜谱订单及状态）',
     inputSchema: {},
@@ -203,6 +219,33 @@ function buildServer(token) {
     },
   }, async ({ shopping_list_id, ...rest }) => asResult(await call(token, 'POST', `/shopping/${shopping_list_id}/items`, rest)));
 
+  server.registerTool('update_shopping_item', {
+    description: '修改采购项（名称/数量/单位/分类/预计价/备注等）。只传要改的字段；shopping_item_id 从 get_shopping_list 获取',
+    inputSchema: {
+      shopping_item_id: z.number(),
+      name: z.string().optional().describe('物品名（中文）'),
+      name_en: z.string().optional(),
+      quantity: z.number().optional(),
+      unit: z.string().optional(),
+      brand: z.string().optional(),
+      specification: z.string().optional().describe('规格，如 500g/瓶'),
+      primary_category: z.string().optional().describe('一级分类，如 食材/日用品'),
+      secondary_category: z.string().optional().describe('二级分类（食材时有效），如 蔬菜/肉类'),
+      estimated_price: z.number().optional(),
+      notes: z.string().optional(),
+    },
+  }, async ({ shopping_item_id, ...rest }) => asResult(await call(token, 'PATCH', `/items/${shopping_item_id}`, rest)));
+
+  server.registerTool('delete_shopping_item', {
+    description: '从采购清单中删除一个采购项。shopping_item_id 从 get_shopping_list 获取',
+    inputSchema: { shopping_item_id: z.number() },
+  }, async ({ shopping_item_id }) => asResult(await call(token, 'DELETE', `/items/${shopping_item_id}`)));
+
+  server.registerTool('delete_shopping_list', {
+    description: '删除整张采购清单（软删除，可在 app 回收站恢复）',
+    inputSchema: { shopping_list_id: z.number() },
+  }, async ({ shopping_list_id }) => asResult(await call(token, 'DELETE', `/shopping/${shopping_list_id}`)));
+
   server.registerTool('create_task', {
     description: '创建一次性临时任务（如"擦阳台玻璃"）。执行人/区域可用名字指定；不填则默认女佣 + 第一个区域。' +
       'priority: normal/important/urgent；require_photo 要求完成时拍照',
@@ -248,6 +291,11 @@ function buildServer(token) {
     return asResult(await call(token, 'PATCH', `/daily/${daily_task_id}`, body));
   });
 
+  server.registerTool('delete_task', {
+    description: '删除一个临时任务（连同检查项/附件/日志）。daily_task_id 从 get_tasks 获取',
+    inputSchema: { daily_task_id: z.number() },
+  }, async ({ daily_task_id }) => asResult(await call(token, 'DELETE', `/daily/${daily_task_id}`)));
+
   server.registerTool('get_tasks', {
     description: '查看某天的任务清单（含状态、执行人）。date 不填为今天',
     inputSchema: { date: z.string().optional().describe('日期 YYYY-MM-DD，默认今天') },
@@ -277,6 +325,27 @@ function buildServer(token) {
     }
     return asResult(await call(token, 'POST', '/upload-avatar', { image_base64, media_type, kind: kind || 'recipe' }));
   });
+
+  server.registerTool('upload_image_begin', {
+    description: '开始分块上传图片（大图单次工具调用放不下 base64 时用；≤30KB 小图可直接用 upload_image）。' +
+      '流程：upload_image_begin → 多次 upload_image_chunk（seq 从 0 连续递增）→ upload_image_finish 拿 /uploads/... 地址',
+    inputSchema: { kind: z.string().optional().describe('文件名前缀（小写字母），默认 recipe') },
+  }, async ({ kind }) => asResult(await call(token, 'POST', '/uploads/begin', { kind })));
+
+  server.registerTool('upload_image_chunk', {
+    description: '上传一块图片数据。每块 ≤30KB base64；seq 从 0 开始连续编号，服务端按 seq 拼接。同一 seq 重传会覆盖',
+    inputSchema: {
+      upload_id: z.string().describe('upload_image_begin 返回的 upload_id'),
+      seq: z.number().describe('块序号，从 0 开始连续递增'),
+      data: z.string().describe('该块的 base64 内容（整张图 base64 的连续切片，不含 data: 前缀）'),
+    },
+  }, async ({ upload_id, seq, data }) => asResult(await call(token, 'POST', `/uploads/${upload_id}/chunk`, { seq, data })));
+
+  server.registerTool('upload_image_finish', {
+    description: '结束分块上传：服务端校验 seq 完整性与图片合法性（PNG/JPEG/GIF/WebP 魔数），返回 /uploads/... 地址。' +
+      '缺块或图片损坏会报错，可补传对应 seq 后重试 finish',
+    inputSchema: { upload_id: z.string() },
+  }, async ({ upload_id }) => asResult(await call(token, 'POST', `/uploads/${upload_id}/finish`)));
 
   return server;
 }

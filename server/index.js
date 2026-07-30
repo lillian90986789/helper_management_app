@@ -535,6 +535,53 @@ api.post('/upload-avatar', (req, res) => {
   catch (e) { return res.status(500).json({ error: 'save_failed' }); }
   res.json({ url: `/uploads/${fname}` });
 });
+
+// ===== 分块图片上传（MCP 客户端单次调用放不下大段 base64，按块传后服务端拼接）=====
+const chunkUploads = new Map(); // upload_id -> { chunks, media_type, kind, userId, created }
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of chunkUploads) if (now - v.created > 30 * 60 * 1000) chunkUploads.delete(k);
+}, 5 * 60 * 1000).unref();
+const IMAGE_MAGIC = [
+  { type: 'image/png', ext: 'png', test: (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { type: 'image/jpeg', ext: 'jpg', test: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { type: 'image/gif', ext: 'gif', test: (b) => b.length > 6 && b.slice(0, 4).toString('latin1') === 'GIF8' },
+  { type: 'image/webp', ext: 'webp', test: (b) => b.length > 12 && b.slice(0, 4).toString('latin1') === 'RIFF' && b.slice(8, 12).toString('latin1') === 'WEBP' },
+];
+api.post('/uploads/begin', (req, res) => {
+  const id = crypto.randomBytes(12).toString('hex');
+  chunkUploads.set(id, { chunks: new Map(), kind: req.body.kind, userId: req.userId, created: Date.now() });
+  res.json({ upload_id: id });
+});
+api.post('/uploads/:id/chunk', (req, res) => {
+  const u = chunkUploads.get(req.params.id);
+  if (!u || u.userId !== req.userId) return res.status(404).json({ error: 'upload_not_found_or_expired' });
+  const seq = Number(req.body.seq);
+  if (!Number.isInteger(seq) || seq < 0) return res.status(400).json({ error: 'bad_seq' });
+  const data = String(req.body.data || '').replace(/\s+/g, '');
+  if (!data) return res.status(400).json({ error: 'data_required' });
+  u.chunks.set(seq, data);
+  res.json({ ok: true, received_chunks: u.chunks.size });
+});
+api.post('/uploads/:id/finish', (req, res) => {
+  const u = chunkUploads.get(req.params.id);
+  if (!u || u.userId !== req.userId) return res.status(404).json({ error: 'upload_not_found_or_expired' });
+  const seqs = [...u.chunks.keys()].sort((a, b) => a - b);
+  // seq 必须从 0 连续到 n-1，缺块直接报错而不是拼出坏文件
+  const missing = seqs.length === 0 || seqs[0] !== 0 || seqs[seqs.length - 1] !== seqs.length - 1;
+  if (missing) return res.status(400).json({ error: 'missing_chunks', received_seqs: seqs });
+  chunkUploads.delete(req.params.id);
+  const base64 = seqs.map((s) => u.chunks.get(s)).join('').replace(/^data:[^;]+;base64,/, '');
+  const buf = Buffer.from(base64, 'base64');
+  if (buf.length > 8 * 1024 * 1024) return res.status(400).json({ error: 'too_large_max_8mb' });
+  const magic = IMAGE_MAGIC.find((m) => m.test(buf));
+  if (!magic) return res.status(400).json({ error: 'not_a_valid_image' }); // 拼接结果不是合法图片 → 大概率有块被截断
+  const kind = /^[a-z]{1,12}$/.test(u.kind || '') ? u.kind : 'recipe';
+  const fname = `${kind}_${Date.now()}_${Math.floor(Math.random() * 1000)}.${magic.ext}`;
+  try { fs.writeFileSync(join(uploadsDir, fname), buf); }
+  catch (e) { return res.status(500).json({ error: 'save_failed' }); }
+  res.json({ url: `/uploads/${fname}`, bytes: buf.length, media_type: magic.type });
+});
 api.post('/members/:id/remove', (req, res) => {
   // 成员离开家庭：失去数据访问 + 同步在后台注销账号并释放 Gmail（可重新注册）
   const fm = db.prepare('SELECT * FROM FamilyMember WHERE family_member_id=?').get(req.params.id);
@@ -880,6 +927,17 @@ api.patch('/daily/:id', (req, res) => {
       db.prepare(`INSERT INTO DailyTaskAttachment (daily_task_id,uploader_id,file_type,file_url) VALUES (?,?, 'reference', ?)`).run(t.daily_task_id, req.userId, url));
   }
   res.json(dailyWith(db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(t.daily_task_id)));
+});
+// 删除临时任务（连同检查项/附件/日志一并删除）
+api.delete('/daily/:id', (req, res) => {
+  const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
+  if (!owns(req, t)) return res.status(404).json({ error: 'not found' });
+  db.transaction(() => {
+    for (const tb of ['DailyTaskChecklist', 'DailyTaskAttachment', 'DailyTaskLog'])
+      db.prepare(`DELETE FROM ${tb} WHERE daily_task_id=?`).run(t.daily_task_id);
+    db.prepare('DELETE FROM DailyTask WHERE daily_task_id=?').run(t.daily_task_id);
+  })();
+  res.json({ ok: true });
 });
 api.post('/daily/:id/transition', (req, res) => {
   const t = db.prepare('SELECT * FROM DailyTask WHERE daily_task_id=?').get(req.params.id);
@@ -1450,11 +1508,15 @@ api.get('/meals/:id', async (req, res) => {
   const mm = mealWith(m); await localizeRecipes(req, mm.recipe);
   res.json(mm);
 });
-// 修改菜谱订单备注（雇主给女佣的当次注意事项，与菜谱固定说明分离）
+// 修改菜谱订单（雇主调整：备注/日期/餐次/份数）。备注是给女佣的当次注意事项，与菜谱固定说明分离
 api.patch('/meals/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(req.params.id);
   if (!owns(req, m)) return res.status(404).json({ error: 'not found' });
-  if (req.body.notes !== undefined) db.prepare('UPDATE MealOrder SET notes=? WHERE meal_order_id=?').run(String(req.body.notes || '').trim(), m.meal_order_id);
+  const b = req.body;
+  if (b.notes !== undefined) db.prepare('UPDATE MealOrder SET notes=? WHERE meal_order_id=?').run(String(b.notes || '').trim(), m.meal_order_id);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(b.meal_date || '')) db.prepare('UPDATE MealOrder SET meal_date=? WHERE meal_order_id=?').run(b.meal_date, m.meal_order_id);
+  if (['breakfast','lunch','dinner'].includes(b.meal_type)) db.prepare('UPDATE MealOrder SET meal_type=? WHERE meal_order_id=?').run(b.meal_type, m.meal_order_id);
+  if (Number(b.servings) > 0) db.prepare('UPDATE MealOrder SET servings=? WHERE meal_order_id=?').run(Math.round(Number(b.servings)), m.meal_order_id);
   res.json(mealWith(db.prepare('SELECT * FROM MealOrder WHERE meal_order_id=?').get(m.meal_order_id)));
 });
 // 雇主删除今日菜单中的菜品
