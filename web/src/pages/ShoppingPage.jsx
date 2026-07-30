@@ -30,7 +30,9 @@ function MaidRequestCard({ role, t, lang, showToast, onListsChanged }) {
     if (action === 'to_list') onListsChanged?.();
   };
   const badge = { pending: ['gray', t('reqPending')], to_list: ['teal', t('reqToList')], online: ['blue', t('reqOnline')], rejected: ['red', t('reqRejected')] };
-  if (role === 'employer' && mr.requests.length === 0) return null; // 雇主无申请时不占位
+  // 雇主只看待处理的申请（已批/已拒的结果体现在清单里，不再占位）；女佣保留全部状态回显
+  const reqs = role === 'employer' ? mr.requests.filter((r) => r.status === 'pending') : mr.requests;
+  if (role === 'employer' && reqs.length === 0) return null;
   return (
     <div className="card">
       <div className="spread">
@@ -38,8 +40,8 @@ function MaidRequestCard({ role, t, lang, showToast, onListsChanged }) {
         <span className="tiny muted">{t('maidReqDeadline')} {mr.deadline.slice(5)} ({t('friS')})</span>
       </div>
       {role === 'maid' && <div className="tiny muted" style={{ margin: '4px 0 8px' }}>{t('maidReqHint')}</div>}
-      {mr.requests.length === 0 && <div className="tiny muted" style={{ padding: '6px 0' }}>{t('maidReqEmpty')}</div>}
-      {mr.requests.map((r) => (
+      {reqs.length === 0 && <div className="tiny muted" style={{ padding: '6px 0' }}>{t('maidReqEmpty')}</div>}
+      {reqs.map((r) => (
         <div key={r.request_id} className="spread" style={{ padding: '6px 0', gap: 8 }}>
           <div style={{ minWidth: 0 }}>
             <span className="small bold">{pick(lang, r.name, r.name_en)}</span>
