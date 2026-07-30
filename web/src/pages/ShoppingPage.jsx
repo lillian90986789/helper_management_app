@@ -127,7 +127,7 @@ function ListGroups({ lists, t, nav }) {
       <div className="small muted mt4">📍 {l.store_name} · {l.assignee?.name} · ⏰ {fmtTime(l.due_time)}</div>
       <div className="spread mt12">
         <span className="small muted">{l.items.length} {t('items')}</span>
-        <span className="bold">{t('budget')} S${l.budget} · <span style={{ color: 'var(--teal)' }}>{t('actualTotal')} S${l.actual_total.toFixed(1)}</span></span>
+        <span className="bold">{t('budget')} S${l.budget} · <span style={{ color: 'var(--teal)' }}>{t('actualTotal')} S${(l.helper_total ?? l.actual_total).toFixed(1)}</span></span>
       </div>
     </div>
   );
@@ -184,7 +184,7 @@ function ShoppingDetail() {
           <div className="stat-grid mt12">
             <div><div className="muted small">{t('budget')}</div><div className="bold" style={{ fontSize: 18 }}>S${l.budget}</div></div>
             <div><div className="muted small">{t('estTotal')}</div><div className="bold" style={{ fontSize: 18 }}>S${l.est_total.toFixed(1)}</div></div>
-            <div><div className="muted small">{t('actualTotal')}</div><div className="bold" style={{ fontSize: 18, color: 'var(--teal)' }}>S${l.actual_total.toFixed(1)}</div></div>
+            <div><div className="muted small">{t('actualTotal')}</div><div className="bold" style={{ fontSize: 18, color: 'var(--teal)' }}>S${(l.helper_total ?? l.actual_total).toFixed(1)}</div></div>
             <div><div className="muted small">{t('items')}</div><div className="bold" style={{ fontSize: 18 }}>{l.items.length}</div></div>
           </div>
         </div>
