@@ -1886,8 +1886,9 @@ api.post('/maid-requests/:id/review', (req, res) => {
       ? db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=? AND family_id=? AND deleted_at IS NULL').get(req.body.shopping_list_id, famId(req))
       : db.prepare("SELECT * FROM ShoppingList WHERE family_id=? AND deleted_at IS NULL AND status='to_buy' AND list_type='maid' ORDER BY shopping_list_id DESC").get(famId(req));
     if (!list) {
+      // 标题用申请提交当天日期（同一周多批申请可区分），不再用周一 week_start
       const lid = db.prepare(`INSERT INTO ShoppingList (family_id,title,assignee_id,budget,store_name,status,creator_id,list_type) VALUES (?,?,?,0,'','to_buy',1,'maid')`)
-        .run(famId(req), '女佣食材申请 ' + r.week_start, r.maid_id).lastInsertRowid;
+        .run(famId(req), '女佣食材申请 ' + String(r.created_at || '').slice(0, 10), r.maid_id).lastInsertRowid;
       list = db.prepare('SELECT * FROM ShoppingList WHERE shopping_list_id=?').get(lid);
     }
     const lp = lastPurchase(famId(req), r.name, r.name_en); // 同名商品历史价 → 预算
